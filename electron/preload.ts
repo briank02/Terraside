@@ -1,24 +1,24 @@
 import { ipcRenderer, contextBridge } from 'electron'
 
-// --------- Expose some API to the Renderer process ---------
-contextBridge.exposeInMainWorld('ipcRenderer', {
-  on(...args: Parameters<typeof ipcRenderer.on>) {
-    const [channel, listener] = args
-    return ipcRenderer.on(channel, (event, ...args) => listener(event, ...args))
-  },
-  off(...args: Parameters<typeof ipcRenderer.off>) {
-    const [channel, ...omit] = args
-    return ipcRenderer.off(channel, ...omit)
-  },
-  send(...args: Parameters<typeof ipcRenderer.send>) {
-    const [channel, ...omit] = args
-    return ipcRenderer.send(channel, ...omit)
-  },
-  invoke(...args: Parameters<typeof ipcRenderer.invoke>) {
-    const [channel, ...omit] = args
-    return ipcRenderer.invoke(channel, ...omit)
-  },
+const api = {
+  selectFolder: () => ipcRenderer.invoke('dialog:openDirectory'),
+  readFolder: (path: string) => ipcRenderer.invoke('folder:read', path),
+  getImages: (path: string) => ipcRenderer.invoke('folder:getImages', path),
+  getCover: (path: string) => ipcRenderer.invoke('folder:getCover', path),
 
-  // You can expose other APTs you need here.
-  // ...
-})
+  minimize: () => ipcRenderer.send('window:minimize'),
+  toggleMaximize: () => ipcRenderer.send('window:maximize'),
+  close: () => ipcRenderer.send('window:close'),
+
+  on: (channel: string, func: (...args: any[]) => void) => {
+      ipcRenderer.on(channel, (_, ...args) => func(...args))
+  },
+  off: (channel: string) => ipcRenderer.removeAllListeners(channel) 
+}
+
+if (process.contextIsolated) {
+  try { contextBridge.exposeInMainWorld('api', api) } catch (error) { console.error(error) }
+} else {
+  // @ts-ignore
+  window.api = api
+}

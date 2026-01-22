@@ -1,22 +1,24 @@
 "use strict";
 const electron = require("electron");
-electron.contextBridge.exposeInMainWorld("ipcRenderer", {
-  on(...args) {
-    const [channel, listener] = args;
-    return electron.ipcRenderer.on(channel, (event, ...args2) => listener(event, ...args2));
+const api = {
+  selectFolder: () => electron.ipcRenderer.invoke("dialog:openDirectory"),
+  readFolder: (path) => electron.ipcRenderer.invoke("folder:read", path),
+  getImages: (path) => electron.ipcRenderer.invoke("folder:getImages", path),
+  getCover: (path) => electron.ipcRenderer.invoke("folder:getCover", path),
+  minimize: () => electron.ipcRenderer.send("window:minimize"),
+  toggleMaximize: () => electron.ipcRenderer.send("window:maximize"),
+  close: () => electron.ipcRenderer.send("window:close"),
+  on: (channel, func) => {
+    electron.ipcRenderer.on(channel, (_, ...args) => func(...args));
   },
-  off(...args) {
-    const [channel, ...omit] = args;
-    return electron.ipcRenderer.off(channel, ...omit);
-  },
-  send(...args) {
-    const [channel, ...omit] = args;
-    return electron.ipcRenderer.send(channel, ...omit);
-  },
-  invoke(...args) {
-    const [channel, ...omit] = args;
-    return electron.ipcRenderer.invoke(channel, ...omit);
+  off: (channel) => electron.ipcRenderer.removeAllListeners(channel)
+};
+if (process.contextIsolated) {
+  try {
+    electron.contextBridge.exposeInMainWorld("api", api);
+  } catch (error) {
+    console.error(error);
   }
-  // You can expose other APTs you need here.
-  // ...
-});
+} else {
+  window.api = api;
+}
