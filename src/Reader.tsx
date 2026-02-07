@@ -246,5 +246,3 @@ export default function Reader({ folderPath, onClose }: ReaderProps) {
     </div>
   )
 }
-
-const miniBtn = { width: '25px', height: '25px', cursor: 'pointer', background: '#444', color: 'white', border: 'none', borderRadius: '4px' }

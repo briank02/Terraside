@@ -196,6 +196,23 @@ function App(): JSX.Element {
           </div>
 
           {/* TOOLS */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: '20px' }}>
+            <span style={{ fontSize: '12px', color: '#888' }}>Size</span>
+            <input 
+              type="range" 
+              min="2" 
+              max="8" 
+              step="1"
+              value={gridColumns} 
+              onChange={(e) => {                  
+                const val = parseInt(e.target.value)
+                setGridColumns(val)
+                localStorage.setItem('gridColumns', val.toString())
+              }}
+              style={{ cursor: 'pointer', width: '100px' }}
+            />
+          </div>
+
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             
             <select 
@@ -213,6 +230,8 @@ function App(): JSX.Element {
               {viewMode === 'grid' ? '☰' : '⊞'}
             </button>
             
+            <div style={{ width: '1px', height: '20px', background: '#333' }}></div> {/* Divider */}
+
             <button onClick={handleSelectFolder} className="btn-primary">
               📂 Open Folder
             </button>
