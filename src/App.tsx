@@ -110,6 +110,7 @@ function App(): JSX.Element {
   // DATA
   const [currentPath, setCurrentPath] = useState<string>('')
   const [folders, setFolders] = useState<FolderData[]>([])
+  const [pathHistory, setPathHistory] = useState<string[]>([])
   
   // UI
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid')
@@ -128,8 +129,15 @@ function App(): JSX.Element {
   // PERSISTENCE & THEME
   useEffect(() => {
     const savedPath = localStorage.getItem('lastLibraryPath')
+    const savedHistory = localStorage.getItem('pathHistory')
+    
+    if (savedHistory) setPathHistory(JSON.parse(savedHistory))
     if (savedPath) loadPath(savedPath)
   }, [])
+
+  useEffect(() => {
+    localStorage.setItem('pathHistory', JSON.stringify(pathHistory))
+  }, [pathHistory])
 
   useEffect(() => { localStorage.setItem('gridColumns', gridColumns.toString()) }, [gridColumns])
 
@@ -151,8 +159,43 @@ function App(): JSX.Element {
   const handleSelectFolder = async () => {
     const result = await (window as any).api.selectFolder()
     if (result) {
+      setPathHistory([])
       setCurrentPath(result.path)
       setFolders(result.subfolders)
+      localStorage.setItem('lastLibraryPath', result.path)
+    }
+  }
+
+  const handleFolderClick = async (folderName: string) => {
+    const separator = currentPath.endsWith('\\') || currentPath.endsWith('/') 
+      ? '' 
+      : (currentPath.includes('\\') ? '\\' : '/')
+    const targetPath = currentPath + separator + folderName
+    
+    const result = await (window as any).api.readFolder(targetPath)
+    
+    if (result) {
+      if (result.subfolders.length > 0) {
+        setPathHistory(prev => [...prev, currentPath])
+        setCurrentPath(result.path)
+        setFolders(result.subfolders)
+        localStorage.setItem('lastLibraryPath', result.path)
+      } else {
+        setReadingFolder(targetPath)
+      }
+    }
+  }
+
+  const handleBack = async () => {
+    if (pathHistory.length === 0) return
+    const newHistory = [...pathHistory]
+    const prevPath = newHistory.pop()! // Get the last path
+    
+    const result = await (window as any).api.readFolder(prevPath)
+    if (result) {
+      setCurrentPath(result.path)
+      setFolders(result.subfolders)
+      setPathHistory(newHistory)
       localStorage.setItem('lastLibraryPath', result.path)
     }
   }
@@ -269,7 +312,16 @@ function App(): JSX.Element {
           </div>
         </div>
 
-        {currentPath && <p style={{ opacity: 0.6, fontSize: '12px', marginBottom: '20px' }}>{currentPath}</p>}
+        {currentPath && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '20px' }}>
+            {pathHistory.length > 0 && (
+              <button onClick={handleBack} className="btn-primary" style={{ padding: '6px 12px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>◀</span> Back
+              </button>
+            )}
+            <p style={{ opacity: 0.6, fontSize: '12px', margin: 0 }}>{currentPath}</p>
+          </div>
+        )}
 
         {/* LIBRARY GRID */}
         <div className="library-grid" style={{ 
@@ -282,11 +334,11 @@ function App(): JSX.Element {
                 key={folder.name} 
                 folder={folder} 
                 parentPath={currentPath}
-                onClick={() => setReadingFolder(currentPath + '\\' + folder.name)}
+                onClick={() => handleFolderClick(folder.name)}
                 convertFileSrc={convertFileSrc}
               />
             ) : (
-              <div key={folder.name} onClick={() => setReadingFolder(currentPath + '\\' + folder.name)} 
+              <div key={folder.name} onClick={() => handleFolderClick(folder.name)}
                 style={{ padding: '15px', background: '#1e1e1e', marginBottom: '5px', cursor: 'pointer', border: '1px solid #333', borderRadius: '6px' }}
               >
                 📁 {folder.name}

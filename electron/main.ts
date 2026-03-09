@@ -16,6 +16,7 @@ let win: BrowserWindow | null
 const scanDirectory = (dirPath: string) => {
   try {
     const contents = fs.readdirSync(dirPath, { withFileTypes: true })
+    const hasImages = contents.some(d => d.isFile() && /\.(png|jpg|jpeg|webp|gif|avif)$/i.test(d.name))
 
     return {
         path: dirPath,
@@ -25,11 +26,45 @@ const scanDirectory = (dirPath: string) => {
             name: d.name, 
             coverPath: null
         }))
-        .sort((a,b) => a.name.localeCompare(b.name, undefined, {numeric:true, sensitivity:'base'}))
+        .sort((a,b) => a.name.localeCompare(b.name, undefined, {numeric:true, sensitivity:'base'})),
+        hasImages
     }
   } catch (e) { 
     console.error(e)
     return null 
+  }
+}
+
+// DFS to find the first image
+const getFirstImageDFS = (dirPath: string): string | null => {
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true })
+    
+    // Separate into files and directories
+    const files = entries.filter(e => e.isFile())
+    const dirs = entries.filter(e => e.isDirectory())
+
+    // Sorting
+    files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+    dirs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+
+    // Check for images in the current directory
+    const imageFile = files.find(f => /\.(png|jpg|jpeg|webp|gif|avif)$/i.test(f.name))
+    if (imageFile) {
+      return path.join(dirPath, imageFile.name)
+    }
+
+    // Go Deeper into subdirectories
+    for (const dir of dirs) {
+      const found = getFirstImageDFS(path.join(dirPath, dir.name))
+      if (found) return found
+    }
+
+    // No images found
+    return null
+  } catch (error) {
+    console.error(`Error reading directory for cover: ${dirPath}`, error)
+    return null
   }
 }
 
@@ -93,12 +128,7 @@ app.whenReady().then(() => {
   ipcMain.on('window:close', () => win?.close())
   
   ipcMain.handle('folder:getCover', async (_, folderPath) => {
-    try {
-      const files = fs.readdirSync(folderPath)
-      const images = files.filter(f => /\.(png|jpg|jpeg|webp|gif|avif)$/i.test(f))
-      images.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
-      return images.length > 0 ? path.join(folderPath, images[0]) : null
-    } catch { return null }
+    return getFirstImageDFS(folderPath)
   })
 
   ipcMain.handle('dialog:openDirectory', async () => {
