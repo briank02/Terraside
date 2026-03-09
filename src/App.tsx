@@ -8,14 +8,22 @@ interface FolderData { name: string; coverPath: string | null }
 const MangaCard = ({ folder, parentPath, onClick, convertFileSrc }: any) => {
   const [cover, setCover] = useState<string | null>(null)
   const [progress, setProgress] = useState<string | null>(null)
+  const [rating, setRating] = useState<string | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    // Check for saved progress immediately
+useEffect(() => {
     const fullPath = parentPath + '\\' + folder.name
+    
+    // Check progress
     const savedPage = localStorage.getItem(`progress:${fullPath}`)
     if (savedPage && savedPage !== '1') {
       setProgress(savedPage)
+    }
+
+    // Check rating
+    const savedRating = localStorage.getItem(`rating:${fullPath}`)
+    if (savedRating && savedRating !== '0') {
+      setRating(savedRating)
     }
 
     // Intersection Observer
@@ -35,7 +43,7 @@ const MangaCard = ({ folder, parentPath, onClick, convertFileSrc }: any) => {
     return () => observer.disconnect()
   }, [folder, parentPath])
 
-  return (
+return (
     <div className="grid-cell" onClick={onClick} ref={cardRef}>
       <div className="manga-card">
         <div className="card-image-area">
@@ -47,6 +55,29 @@ const MangaCard = ({ folder, parentPath, onClick, convertFileSrc }: any) => {
             <div className="skeleton"></div>
           )}
           
+          {/* Rating Badge */}
+          {rating && (
+            <div style={{
+              position: 'absolute',
+              top: '8px',
+              left: '8px',
+              background: 'rgba(0, 0, 0, 0.8)',
+              color: '#FFD700',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              fontSize: '11px',
+              fontWeight: 'bold',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
+              border: '1px solid #444',
+              backdropFilter: 'blur(4px)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}>
+              ★ {rating}
+            </div>
+          )}
+
           {/* Progress Badge */}
           {progress && (
             <div style={{

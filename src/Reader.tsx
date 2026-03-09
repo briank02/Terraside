@@ -14,7 +14,6 @@ export default function Reader({ folderPath, onClose }: ReaderProps) {
     (localStorage.getItem('readingDir') as any) || 'ltr'
   )
   
-  // DEFAULT
   const [imageWidth, setImageWidth] = useState<number>(viewMode === 'horizontal' ? 100 : 40)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
@@ -22,6 +21,11 @@ export default function Reader({ folderPath, onClose }: ReaderProps) {
   const [currentPage, setCurrentPage] = useState<number>(1)
   const [tempZoom, setTempZoom] = useState<string>(imageWidth.toString())
   const [tempPage, setTempPage] = useState<string>('1')
+  
+  const [rating, setRating] = useState<number>(() => {
+    const saved = localStorage.getItem(`rating:${folderPath}`)
+    return saved ? parseInt(saved) : 0
+  })
   
   const containerRef = useRef<HTMLDivElement>(null)
   const isAutoScrolling = useRef<boolean>(false)
@@ -51,7 +55,7 @@ export default function Reader({ folderPath, onClose }: ReaderProps) {
     }
   }, [])
 
-  // KEYBOARD
+// KEYBOARD
   useEffect(() => {
     const keys = new Set<string>()
     const onDown = (e: KeyboardEvent) => {
@@ -63,6 +67,8 @@ export default function Reader({ folderPath, onClose }: ReaderProps) {
     }
     const onUp = (e: KeyboardEvent) => keys.delete(e.key.toLowerCase())
     
+    let frameId: number; // Store the updating frame ID
+    
     const loop = () => {
       if (containerRef.current && !isAutoScrolling.current) {
         let speed = 0
@@ -70,17 +76,27 @@ export default function Reader({ folderPath, onClose }: ReaderProps) {
         if (keys.has('s') || keys.has('arrowdown')) speed = 15
         if (speed !== 0) containerRef.current.scrollBy({ top: speed })
       }
-      requestAnimationFrame(loop)
+      frameId = requestAnimationFrame(loop) // Update frameId continuously
     }
+    
     window.addEventListener('keydown', onDown)
     window.addEventListener('keyup', onUp)
-    const frame = requestAnimationFrame(loop)
+    frameId = requestAnimationFrame(loop)
+    
     return () => { 
       window.removeEventListener('keydown', onDown) 
       window.removeEventListener('keyup', onUp)
-      cancelAnimationFrame(frame)
+      cancelAnimationFrame(frameId) // Properly kills the active loop
     }
   }, [viewMode, currentPage, readingDir, pages])
+
+  // Rating Handler
+  const handleRating = (val: number) => {
+    // Toggle off if clicking the same star
+    const newRating = val === rating ? 0 : val
+    setRating(newRating)
+    localStorage.setItem(`rating:${folderPath}`, newRating.toString())
+  }
 
   // HELPERS
   const handleMoveLeft = () => commitPage(readingDir === 'ltr' ? currentPage - 1 : currentPage + 1)
@@ -139,7 +155,7 @@ export default function Reader({ folderPath, onClose }: ReaderProps) {
     }
   }
 
-  return (
+return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#000', color: '#ccc' }}>
       <TitleBar 
         title={folderPath.split('\\').pop() || 'Reader'} 
@@ -195,7 +211,7 @@ export default function Reader({ folderPath, onClose }: ReaderProps) {
         })}
       </div>
 
-      {/* BOTTOM CONTROLS */}
+{/* BOTTOM CONTROLS */}
       <div style={{ 
         height: '50px', 
         background: '#1e1e1e',
@@ -242,6 +258,28 @@ export default function Reader({ folderPath, onClose }: ReaderProps) {
           <span style={{ fontSize: '12px', color: '#666' }}>/ {pages.length}</span>
           <button onClick={handleMoveRight} className="btn-icon" style={{ width: '24px', height: '24px' }}>❯</button>
         </div>
+        
+        {/* NEW: Rating Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#121212', padding: '4px 12px', borderRadius: '8px', border: '1px solid #333' }}>
+          {[1, 2, 3, 4, 5].map(star => (
+            <button
+              key={star}
+              onClick={() => handleRating(star)}
+              className="btn-icon"
+              style={{
+                width: 'auto',
+                height: 'auto',
+                padding: '0 2px',
+                color: rating >= star ? '#FFD700' : '#444',
+                fontSize: '18px',
+                transition: 'color 0.2s',
+              }}
+            >
+              ★
+            </button>
+          ))}
+        </div>
+
       </div>
     </div>
   )
