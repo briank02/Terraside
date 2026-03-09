@@ -68,6 +68,44 @@ const getFirstImageDFS = (dirPath: string): string | null => {
   }
 }
 
+const coverCache = new Map<string, string>()
+
+const getFirstImageDFSAsync = async (dirPath: string): Promise<string | null> => {
+  if (coverCache.has(dirPath)) {
+    return coverCache.get(dirPath) || null
+  }
+
+  try {
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
+    
+    const files = entries.filter(e => e.isFile())
+    const dirs = entries.filter(e => e.isDirectory())
+
+    files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+    dirs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+
+    const imageFile = files.find(f => /\.(png|jpg|jpeg|webp|gif|avif)$/i.test(f.name))
+    if (imageFile) {
+      const foundPath = path.join(dirPath, imageFile.name)
+      coverCache.set(dirPath, foundPath)
+      return foundPath
+    }
+
+    for (const dir of dirs) {
+      const found = await getFirstImageDFSAsync(path.join(dirPath, dir.name))
+      if (found) {
+        coverCache.set(dirPath, found)
+        return found
+      }
+    }
+
+    return null
+  } catch (error) {
+    console.error(`Error reading directory for cover: ${dirPath}`, error)
+    return null
+  }
+}
+
 function createWindow() {
   win = new BrowserWindow({
     frame: false,
@@ -128,7 +166,7 @@ app.whenReady().then(() => {
   ipcMain.on('window:close', () => win?.close())
   
   ipcMain.handle('folder:getCover', async (_, folderPath) => {
-    return getFirstImageDFS(folderPath)
+    return await getFirstImageDFSAsync(folderPath)
   })
 
   ipcMain.handle('dialog:openDirectory', async () => {
