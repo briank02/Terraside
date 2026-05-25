@@ -4,6 +4,8 @@ import Reader from './Reader'
 import TitleBar from './TitleBar'
 
 interface FolderData { name: string; coverPath: string | null }
+type SortMode = 'alpha' | 'random' | 'rating' | 'unread'
+type ReadingDir = 'rtl' | 'ltr'
 
 const MangaCard = ({ folder, parentPath, onClick, convertFileSrc }: any) => {
   const [cover, setCover] = useState<string | null>(null)
@@ -120,11 +122,19 @@ function App(): JSX.Element {
   // SEARCH & SORT
   const [searchTerm, setSearchTerm] = useState<string>('') 
   const [activeSearch, setActiveSearch] = useState<string>('') 
-  const [sortMode, setSortMode] = useState<'alpha' | 'random'>('alpha')
+  const [sortMode, setSortMode] = useState<SortMode>('alpha')
 
   // SETTINGS
   const [isLightMode, setIsLightMode] = useState(localStorage.getItem('theme') === 'light')
+  const [readingDir, setReadingDir] = useState<ReadingDir>(
+    (localStorage.getItem('readingDir') as ReadingDir) || 'ltr'
+  )
+  const [scrollSpeed, setScrollSpeed] = useState<number>(() => parseInt(localStorage.getItem('scrollSpeed') || '15'))
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const libraryScrollRef = useRef<HTMLDivElement>(null)
+  const lastLibraryScrollTopRef = useRef(0)
+  const wasReadingFolderRef = useRef(false)
+  const [isLibraryScrolled, setIsLibraryScrolled] = useState(false)
 
   // PERSISTENCE & THEME
   useEffect(() => {
@@ -145,6 +155,26 @@ function App(): JSX.Element {
     document.body.className = isLightMode ? 'light-theme' : ''
     localStorage.setItem('theme', isLightMode ? 'light' : 'dark')
   }, [isLightMode])
+  useEffect(() => { localStorage.setItem('readingDir', readingDir) }, [readingDir])
+  useEffect(() => { localStorage.setItem('scrollSpeed', scrollSpeed.toString()) }, [scrollSpeed])
+
+  useEffect(() => {
+    if (readingFolder) {
+      wasReadingFolderRef.current = true
+      return
+    }
+
+    if (wasReadingFolderRef.current && libraryScrollRef.current) {
+      libraryScrollRef.current.scrollTop = lastLibraryScrollTopRef.current
+      wasReadingFolderRef.current = false
+    }
+  }, [readingFolder])
+
+  const handleLibraryScroll = () => {
+    const scrollTop = libraryScrollRef.current?.scrollTop ?? 0
+    const nextIsScrolled = scrollTop > 0
+    setIsLibraryScrolled(prev => prev === nextIsScrolled ? prev : nextIsScrolled)
+  }
 
   // LOGIC
   const loadPath = async (path: string) => {
@@ -181,6 +211,7 @@ function App(): JSX.Element {
         setFolders(result.subfolders)
         localStorage.setItem('lastLibraryPath', result.path)
       } else {
+        lastLibraryScrollTopRef.current = libraryScrollRef.current?.scrollTop ?? 0
         setReadingFolder(targetPath)
       }
     }
@@ -202,15 +233,108 @@ function App(): JSX.Element {
 
   const convertFileSrc = (path: string) => `media:///${encodeURI(path.replace(/\\/g, '/'))}`
 
+  const getFolderPath = (folderName: string) => {
+    const separator = currentPath.endsWith('\\') || currentPath.endsWith('/')
+      ? ''
+      : (currentPath.includes('\\') ? '\\' : '/')
+    return currentPath + separator + folderName
+  }
+
+  const compareByName = (a: FolderData, b: FolderData) => (
+    a.name.localeCompare(b.name, undefined, { numeric: true })
+  )
+
+  const getRatingValue = (folder: FolderData) => {
+    const rating = parseInt(localStorage.getItem(`rating:${getFolderPath(folder.name)}`) || '0')
+    return isNaN(rating) ? 0 : rating
+  }
+
+  const isUnread = (folder: FolderData) => {
+    const folderPath = getFolderPath(folder.name)
+    const rating = parseInt(localStorage.getItem(`rating:${folderPath}`) || '0')
+    const isRated = !isNaN(rating) && rating > 0
+    const isFinished = localStorage.getItem(`finished:${folderPath}`) === 'true'
+    return !isRated && !isFinished
+  }
+
   const getProcessedFolders = () => {
     let processed = folders.filter(f => f.name.toLowerCase().includes(activeSearch.toLowerCase()))
     if (sortMode === 'random') processed = [...processed].sort(() => Math.random() - 0.5)
-    else processed.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+    else if (sortMode === 'rating') {
+      processed.sort((a, b) => {
+        const ratingDiff = getRatingValue(b) - getRatingValue(a)
+        return ratingDiff || compareByName(a, b)
+      })
+    } else if (sortMode === 'unread') {
+      processed.sort((a, b) => {
+        const unreadDiff = Number(isUnread(b)) - Number(isUnread(a))
+        return unreadDiff || compareByName(a, b)
+      })
+    } else processed.sort(compareByName)
     return processed
   }
 
+  const chapterPaths = folders.map(folder => getFolderPath(folder.name))
+  const currentChapterIndex = readingFolder ? chapterPaths.indexOf(readingFolder) : -1
+  const previousChapterPath = currentChapterIndex > 0 ? chapterPaths[currentChapterIndex - 1] : null
+  const nextChapterPath = currentChapterIndex >= 0 && currentChapterIndex < chapterPaths.length - 1
+    ? chapterPaths[currentChapterIndex + 1]
+    : null
+
+  const settingsModal = isSettingsOpen && (
+    <div className="modal-overlay" onClick={() => setIsSettingsOpen(false)}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ margin: 0 }}>Settings</h3>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+          <span>Theme:</span>
+          <button onClick={() => setIsLightMode(!isLightMode)} style={{ padding: '5px 10px', cursor: 'pointer' }}>
+            {isLightMode ? 'Light Mode' : 'Dark Mode'}
+          </button>
+        </label>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+          <input type="checkbox" checked={readingDir === 'rtl'} onChange={(e) => setReadingDir(e.target.checked ? 'rtl' : 'ltr')} />
+          Right to Left Reading
+        </label>
+
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <span>Scroll speed: {scrollSpeed}</span>
+          <input
+            type="range"
+            min="5"
+            max="45"
+            step="1"
+            value={scrollSpeed}
+            onChange={(e) => setScrollSpeed(parseInt(e.target.value))}
+            style={{ cursor: 'pointer' }}
+          />
+        </label>
+
+        <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={() => setIsSettingsOpen(false)} style={{ padding: '5px 15px', cursor: 'pointer' }}>Close</button>
+        </div>
+      </div>
+    </div>
+  )
+
   if (readingFolder) {
-    return <Reader folderPath={readingFolder} onClose={() => setReadingFolder(null)} />
+    return (
+      <>
+        <Reader
+          key={readingFolder}
+          folderPath={readingFolder}
+          onClose={() => setReadingFolder(null)}
+          onSettingsClick={() => setIsSettingsOpen(true)}
+          readingDir={readingDir}
+          scrollSpeed={scrollSpeed}
+          previousChapterPath={previousChapterPath}
+          nextChapterPath={nextChapterPath}
+          onOpenChapter={setReadingFolder}
+        />
+        {settingsModal}
+      </>
+    )
   }
 
   return (
@@ -224,30 +348,12 @@ function App(): JSX.Element {
       />
 
       {/* CENTERED MODAL SETTINGS */}
-      {isSettingsOpen && (
-        <div className="modal-overlay" onClick={() => setIsSettingsOpen(false)}>
-          {/* stopPropagation prevents closing when clicking inside the box */}
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: 0 }}>Settings</h3>
-            
-            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-               <span>Theme:</span>
-               <button onClick={() => setIsLightMode(!isLightMode)} style={{ padding: '5px 10px', cursor: 'pointer' }}>
-                 {isLightMode ? 'Dark Mode' : 'Light Mode'}
-               </button>
-            </label>
-            
-            <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end' }}>
-              <button onClick={() => setIsSettingsOpen(false)} style={{ padding: '5px 15px', cursor: 'pointer' }}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {settingsModal}
 
       {/* MAIN CONTENT */}
-      <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+      <div ref={libraryScrollRef} onScroll={handleLibraryScroll} style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
         {/* CONTROLS */}
-        <div className="toolbar" style={{ borderRadius: '8px', marginBottom: '20px' }}>
+        <div className={`toolbar ${isLibraryScrolled ? 'toolbar-scrolled' : ''}`} style={{ borderRadius: '8px', marginBottom: '20px' }}>
           
           {/* SEARCH */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
@@ -290,11 +396,13 @@ function App(): JSX.Element {
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             
             <select 
-              value={sortMode} onChange={(e) => setSortMode(e.target.value as any)}
+              value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}
               className="input-dark"
-              style={{ cursor: 'pointer' }}
+              style={{ cursor: 'pointer', fontSize: '15px' }}
             >
               <option value="alpha">A-Z</option>
+              <option value="rating">Rating</option>
+              <option value="unread">Unread</option>
               <option value="random">Random</option>
             </select>
 

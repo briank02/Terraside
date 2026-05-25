@@ -1,21 +1,35 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, type WheelEvent } from 'react'
 import TitleBar from './TitleBar'
+
+type ReadingDir = 'rtl' | 'ltr'
 
 interface ReaderProps {
   folderPath: string
   onClose: () => void
+  onSettingsClick: () => void
+  readingDir: ReadingDir
+  scrollSpeed: number
+  previousChapterPath: string | null
+  nextChapterPath: string | null
+  onOpenChapter: (folderPath: string) => void
 }
 
-export default function Reader({ folderPath, onClose }: ReaderProps) {
+export default function Reader({
+  folderPath,
+  onClose,
+  onSettingsClick,
+  readingDir,
+  scrollSpeed,
+  previousChapterPath,
+  nextChapterPath,
+  onOpenChapter
+}: ReaderProps) {
   const [viewMode, setViewMode] = useState<'vertical' | 'horizontal'>(
     (localStorage.getItem('viewMode') as any) || 'horizontal'
   )
-  const [readingDir, setReadingDir] = useState<'rtl' | 'ltr'>(
-    (localStorage.getItem('readingDir') as any) || 'ltr'
-  )
   
   const [imageWidth, setImageWidth] = useState<number>(viewMode === 'horizontal' ? 100 : 40)
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isPreviewMode, setIsPreviewMode] = useState(false)
 
   const [pages, setPages] = useState<string[]>([])
   const [currentPage, setCurrentPage] = useState<number>(1)
@@ -37,12 +51,16 @@ export default function Reader({ folderPath, onClose }: ReaderProps) {
 
   // PERSISTENCE
   useEffect(() => { localStorage.setItem('viewMode', viewMode) }, [viewMode])
-  useEffect(() => { localStorage.setItem('readingDir', readingDir) }, [readingDir])
   useEffect(() => { setTempZoom(imageWidth.toString()) }, [imageWidth])
   useEffect(() => {
     const key = `progress:${folderPath}`
     localStorage.setItem(key, currentPage.toString())
   }, [folderPath, currentPage])
+  useEffect(() => {
+    if (pages.length > 0 && currentPage >= pages.length) {
+      localStorage.setItem(`finished:${folderPath}`, 'true')
+    }
+  }, [currentPage, folderPath, pages.length])
   useEffect(() => {
     const key = `progress:${folderPath}`
     const savedPage = localStorage.getItem(key)
@@ -72,8 +90,8 @@ export default function Reader({ folderPath, onClose }: ReaderProps) {
     const loop = () => {
       if (containerRef.current && !isAutoScrolling.current) {
         let speed = 0
-        if (keys.has('w') || keys.has('arrowup')) speed = -15
-        if (keys.has('s') || keys.has('arrowdown')) speed = 15
+        if (keys.has('w') || keys.has('arrowup')) speed = -scrollSpeed
+        if (keys.has('s') || keys.has('arrowdown')) speed = scrollSpeed
         if (speed !== 0) containerRef.current.scrollBy({ top: speed })
       }
       frameId = requestAnimationFrame(loop) // Update frameId continuously
@@ -88,7 +106,7 @@ export default function Reader({ folderPath, onClose }: ReaderProps) {
       window.removeEventListener('keyup', onUp)
       cancelAnimationFrame(frameId) // Properly kills the active loop
     }
-  }, [viewMode, currentPage, readingDir, pages])
+  }, [viewMode, currentPage, readingDir, pages, scrollSpeed])
 
   // Rating Handler
   const handleRating = (val: number) => {
@@ -135,6 +153,16 @@ export default function Reader({ folderPath, onClose }: ReaderProps) {
     else commitZoom(40)
   }
 
+  const handleWheel = (e: WheelEvent<HTMLDivElement>) => {
+    if (scrollSpeed === 15 || !containerRef.current) return
+    e.preventDefault()
+    const multiplier = scrollSpeed / 15
+    containerRef.current.scrollBy({
+      top: e.deltaY * multiplier,
+      left: e.deltaX * multiplier
+    })
+  }
+
   const handleScroll = () => {
     if (viewMode !== 'vertical' || isAutoScrolling.current || !containerRef.current) return
     const containerTop = containerRef.current.scrollTop
@@ -156,41 +184,47 @@ export default function Reader({ folderPath, onClose }: ReaderProps) {
   }
 
 return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#000', color: '#ccc' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg-app)', color: 'var(--text-main)' }}>
       <TitleBar 
         title={folderPath.split('\\').pop() || 'Reader'} 
         onHomeClick={onClose} 
-        onSettingsClick={() => setIsSettingsOpen(true)} 
+        onSettingsClick={onSettingsClick}
       />
-
-      {isSettingsOpen && (
-        <div className="modal-overlay" onClick={() => setIsSettingsOpen(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: 0 }}>Reader Settings</h3>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-              <input type="checkbox" checked={readingDir === 'rtl'} onChange={(e) => setReadingDir(e.target.checked ? 'rtl' : 'ltr')} />
-              Right to Left Reading
-            </label>
-            <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-end' }}>
-              <button onClick={() => setIsSettingsOpen(false)} style={{ padding: '5px 15px', cursor: 'pointer' }}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* VIEWER AREA */}
       <div 
         ref={containerRef} 
         onScroll={handleScroll}
+        onWheel={handleWheel}
         style={{ 
           flex: 1, 
           overflow: 'auto', 
           display: 'flex', 
           flexDirection: 'column', 
-          alignItems: 'center', 
-          justifyContent: viewMode === 'horizontal' ? 'center' : 'flex-start' 
+          alignItems: isPreviewMode ? 'stretch' : 'center',
+          justifyContent: viewMode === 'horizontal' && !isPreviewMode ? 'center' : 'flex-start'
       }}>
-        {pages.map((src, i) => {
+        {isPreviewMode ? (
+          <div className="preview-grid">
+            {pages.map((src, i) => (
+              <button
+                key={src}
+                className={`preview-thumb-button ${currentPage === i + 1 ? 'active' : ''}`}
+                onClick={() => {
+                  setIsPreviewMode(false)
+                  commitPage(i + 1)
+                }}
+                title={`Page ${i + 1}`}
+              >
+                <img
+                  src={`media:///${encodeURI(src.replace(/\\/g, '/'))}`}
+                  className="preview-thumb"
+                  loading="lazy"
+                />
+              </button>
+            ))}
+          </div>
+        ) : pages.map((src, i) => {
           if (viewMode === 'horizontal' && i + 1 !== currentPage) return null
           
           return (
@@ -213,22 +247,35 @@ return (
 
 {/* BOTTOM CONTROLS */}
       <div style={{ 
-        height: '50px', 
-        background: '#1e1e1e',
-        borderTop: '1px solid #333', 
+        height: '58px',
+        background: 'var(--bg-panel)',
+        borderTop: '1px solid var(--border)', 
         display: 'flex', 
         justifyContent: 'center', 
         alignItems: 'center', 
-        gap: '24px' 
+        gap: '12px',
+        padding: '0 12px'
       }}>
+        <button
+          onClick={() => previousChapterPath && onOpenChapter(previousChapterPath)}
+          disabled={!previousChapterPath}
+          className="btn-icon reader-bar-button"
+          style={{ opacity: previousChapterPath ? 1 : 0.35 }}
+        >
+          &lt; Previous Chapter
+        </button>
+
+        <button onClick={() => setIsPreviewMode(!isPreviewMode)} className="btn-icon reader-bar-button">
+          {isPreviewMode ? 'Close Preview' : 'Preview Mode'}
+        </button>
         
         {/* View Toggle */}
-        <button onClick={toggleViewMode} className="btn-icon" style={{ width: 'auto', padding: '6px 12px', fontSize: '13px', border: '1px solid #333' }}>
+        <button onClick={toggleViewMode} className="btn-icon reader-bar-button">
           {viewMode === 'vertical' ? 'Height Fit' : 'Page Flip'}
         </button>
 
         {/* Zoom Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#121212', padding: '4px', borderRadius: '8px', border: '1px solid #333' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-app)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border)' }}>
           <button onClick={() => commitZoom(imageWidth - 10)} className="btn-icon" style={{ width: '24px', height: '24px' }}>−</button>
           <input 
             type="number" 
@@ -244,7 +291,7 @@ return (
         </div>
 
         {/* Page Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#121212', padding: '4px', borderRadius: '8px', border: '1px solid #333' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-app)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border)' }}>
           <button onClick={handleMoveLeft} className="btn-icon" style={{ width: '24px', height: '24px' }}>❮</button>
           <input 
             type="number" 
@@ -260,7 +307,7 @@ return (
         </div>
         
         {/* NEW: Rating Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#121212', padding: '4px 12px', borderRadius: '8px', border: '1px solid #333' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--bg-app)', padding: '4px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
           {[1, 2, 3, 4, 5].map(star => (
             <button
               key={star}
@@ -279,6 +326,15 @@ return (
             </button>
           ))}
         </div>
+
+        <button
+          onClick={() => nextChapterPath && onOpenChapter(nextChapterPath)}
+          disabled={!nextChapterPath}
+          className="btn-icon reader-bar-button"
+          style={{ opacity: nextChapterPath ? 1 : 0.35 }}
+        >
+          Next Chapter &gt;
+        </button>
 
       </div>
     </div>

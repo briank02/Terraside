@@ -45,6 +45,9 @@
 .input-dark:focus {
   border-color: var(--accent);
 }
+.input-dark option {
+  font-size: 15px;
+}
 
 .toolbar {
   background: var(--bg-panel);
@@ -54,6 +57,20 @@
   justify-content: space-between;
   align-items: center;
   gap: 15px;
+  position: sticky;
+  top: 0;
+  z-index: 500;
+  transition: background 0.2s ease, box-shadow 0.2s ease, backdrop-filter 0.2s ease;
+}
+
+.toolbar-scrolled {
+  background: rgba(30, 30, 30, 0.78);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
+.light-theme .toolbar-scrolled {
+  background: rgba(224, 224, 224, 0.78);
 }
 
 .library-grid {
@@ -67,6 +84,10 @@
   position: relative;
   aspect-ratio: 2 / 3;
   width: 100%;
+}
+
+.grid-cell:hover {
+  z-index: 200;
 }
 
 .manga-card {
@@ -164,8 +185,14 @@
 }
 
 .light-theme {
-  background-color: #f0f0f0 !important;
-  color: #222 !important;
+  --bg-app: #f0f0f0;
+  --bg-panel: #e0e0e0;
+  --bg-hover: #d0d0d0;
+  --text-main: #222;
+  --text-dim: #555;
+  --border: #ccc;
+  background-color: var(--bg-app) !important;
+  color: var(--text-main) !important;
 }
 
 .light-theme .manga-card {
@@ -179,13 +206,13 @@
 }
 
 .light-theme header, .light-theme .settings-popup {
-  background: #e0e0e0 !important;
-  color: #222;
+  background: var(--bg-panel) !important;
+  color: var(--text-main);
 }
 
 .settings-popup {
-  position: absolute; top: 70px; right: 20px; background: #333; 
-  padding: 15px; border-radius: 8px; border: 1px solid #555; z-index: 1000;
+  position: absolute; top: 70px; right: 20px; background: var(--bg-panel); 
+  padding: 15px; border-radius: 8px; border: 1px solid var(--border); z-index: 1000;
 }
 
 input::-webkit-outer-spin-button,
@@ -211,12 +238,12 @@ input[type=number] {
 }
 
 .modal-content {
-  background: #222;
+  background: var(--bg-panel);
   padding: 25px;
   border-radius: 8px;
-  border: 1px solid #444;
+  border: 1px solid var(--border);
   min-width: 300px;
-  color: white;
+  color: var(--text-main);
   box-shadow: 0 10px 30px rgba(0,0,0,0.5);
   display: flex;
   flex-direction: column;
@@ -227,6 +254,47 @@ input[type=number] {
   background: #fff;
   border-color: #ccc;
   color: #222;
+}
+
+.reader-bar-button {
+  width: auto;
+  padding: 6px 12px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.reader-bar-button:disabled {
+  cursor: default;
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 10px;
+  padding: 20px;
+  width: 100%;
+  align-items: start;
+}
+
+.preview-thumb-button {
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  cursor: pointer;
+}
+
+.preview-thumb-button:hover,
+.preview-thumb-button.active {
+  border-color: var(--accent);
+}
+
+.preview-thumb {
+  display: block;
+  width: 100%;
+  height: 150px;
+  object-fit: contain;
 }
 
 @keyframes shimmer {
