@@ -1,4 +1,5 @@
-import { useEffect, useState, useRef, type WheelEvent } from 'react'
+import React, { useEffect, useState, useRef, type WheelEvent } from 'react'
+import { VirtuosoGrid } from 'react-virtuoso'
 import TitleBar from './TitleBar'
 
 type ReadingDir = 'rtl' | 'ltr'
@@ -35,7 +36,7 @@ export default function Reader({
   const [currentPage, setCurrentPage] = useState<number>(1)
   const [tempZoom, setTempZoom] = useState<string>(imageWidth.toString())
   const [tempPage, setTempPage] = useState<string>('1')
-  
+
   const [rating, setRating] = useState<number>(() => {
     const saved = localStorage.getItem(`rating:${folderPath}`)
     return saved ? parseInt(saved) : 0
@@ -43,6 +44,11 @@ export default function Reader({
   
   const containerRef = useRef<HTMLDivElement>(null)
   const isAutoScrolling = useRef<boolean>(false)
+  const [scrollParent, setScrollParent] = useState<HTMLElement | null>(null)
+
+  useEffect(() => {
+    if (containerRef.current) setScrollParent(containerRef.current)
+  }, [isPreviewMode])
 
   // LOAD
   useEffect(() => {
@@ -205,25 +211,36 @@ return (
           justifyContent: viewMode === 'horizontal' && !isPreviewMode ? 'center' : 'flex-start'
       }}>
         {isPreviewMode ? (
-          <div className="preview-grid">
-            {pages.map((src, i) => (
-              <button
-                key={src}
-                className={`preview-thumb-button ${currentPage === i + 1 ? 'active' : ''}`}
-                onClick={() => {
-                  setIsPreviewMode(false)
-                  commitPage(i + 1)
-                }}
-                title={`Page ${i + 1}`}
-              >
-                <img
-                  src={`media:///${encodeURI(src.replace(/\\/g, '/'))}`}
-                  className="preview-thumb"
-                  loading="lazy"
-                />
-              </button>
-            ))}
-          </div>
+          scrollParent && (
+            <VirtuosoGrid
+              useWindowScroll={false}
+              customScrollParent={scrollParent}
+              data={pages}
+              components={{
+                List: React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>((props, ref) => (
+                  <div {...props} ref={ref} className="preview-grid" />
+                ))
+              }}
+              itemContent={(i, src) => (
+                <button
+                  key={src}
+                  className={`preview-thumb-button ${currentPage === i + 1 ? 'active' : ''}`}
+                  onClick={() => {
+                    setIsPreviewMode(false)
+                    commitPage(i + 1)
+                  }}
+                  title={`Page ${i + 1}`}
+                >
+                  <img
+                    src={`thumb:///${encodeURI(src.replace(/\\/g, '/'))}`}
+                    className="preview-thumb"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </button>
+              )}
+            />
+          )
         ) : pages.map((src, i) => {
           if (viewMode === 'horizontal' && i + 1 !== currentPage) return null
           

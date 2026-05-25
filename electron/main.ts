@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, protocol, nativeImage } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'fs'
@@ -151,6 +151,27 @@ app.whenReady().then(() => {
       }
       try { filePath = decodeURIComponent(filePath) } catch {}
       return new Response(fs.createReadStream(filePath) as any)
+    } catch { return new Response('Error', { status: 500 }) }
+  })
+
+  protocol.handle('thumb', async (request) => {
+    try {
+      let filePath = request.url.replace(/^thumb:\/\//, '')
+      if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(filePath)) {
+        filePath = filePath.slice(1)
+      }
+      try { filePath = decodeURIComponent(filePath) } catch {}
+      try {
+        const thumb = await nativeImage.createThumbnailFromPath(filePath, { width: 200, height: 200 })
+        if (thumb.isEmpty()) throw new Error('Empty thumbnail')
+        
+        return new Response(new Uint8Array(thumb.toPNG()), {
+          headers: { 'Content-Type': 'image/png' }
+        })
+      } catch (e) {
+        // Fallback to original image if OS thumbnail provider fails
+        return new Response(fs.createReadStream(filePath) as any)
+      }
     } catch { return new Response('Error', { status: 500 }) }
   })
 

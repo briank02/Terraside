@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
+import { VirtuosoGrid } from 'react-virtuoso'
 import './App.css'
 import Reader from './Reader'
 import TitleBar from './TitleBar'
@@ -7,15 +8,16 @@ interface FolderData { name: string; coverPath: string | null }
 type SortMode = 'alpha' | 'random' | 'rating' | 'unread'
 type ReadingDir = 'rtl' | 'ltr'
 
+const coverCache = new Map<string, string | 'empty'>()
+
 const MangaCard = ({ folder, parentPath, onClick, convertFileSrc }: any) => {
-  const [cover, setCover] = useState<string | null>(null)
+  const fullPath = parentPath + '\\' + folder.name
+  const [cover, setCover] = useState<string | null>(coverCache.get(fullPath) || null)
   const [progress, setProgress] = useState<string | null>(null)
   const [rating, setRating] = useState<string | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
 
-useEffect(() => {
-    const fullPath = parentPath + '\\' + folder.name
-    
+  useEffect(() => {
     // Check progress
     const savedPage = localStorage.getItem(`progress:${fullPath}`)
     if (savedPage && savedPage !== '1') {
@@ -28,29 +30,33 @@ useEffect(() => {
       setRating(savedRating)
     }
 
-    // Intersection Observer
-    const observer = new IntersectionObserver((entries) => {
-      const entry = entries[0]
-      if (entry.isIntersecting && !cover) {
+    let isActive = true
+    let timeoutId: any
+
+    if (!coverCache.has(fullPath)) {
+      timeoutId = setTimeout(() => {
+        if (!isActive) return
         (window as any).api.getCover(fullPath).then((path: string | null) => {
-          if (path) setCover(convertFileSrc(path))
-          else setCover('empty') 
+          if (!isActive) return
+          const result = path ? convertFileSrc(path) : 'empty'
+          setCover(result)
+          coverCache.set(fullPath, result)
         })
-        observer.disconnect()
-      }
-    }, { rootMargin: '200% 0px 200% 0px' })
+      }, 150)
+    }
 
-    if (cardRef.current) observer.observe(cardRef.current)
-
-    return () => observer.disconnect()
-  }, [folder, parentPath])
+    return () => {
+      isActive = false
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }, [fullPath])
 
 return (
     <div className="grid-cell" onClick={onClick} ref={cardRef}>
       <div className="manga-card">
         <div className="card-image-area">
           {cover && cover !== 'empty' ? (
-            <img src={cover} className="card-image" loading="lazy" />
+            <img src={cover} className="card-image" loading="lazy" decoding="async" />
           ) : cover === 'empty' ? (
             <span style={{ fontSize: '32px', opacity: 0.2 }}>📁</span>
           ) : (
@@ -132,8 +138,9 @@ function App(): JSX.Element {
   const [scrollSpeed, setScrollSpeed] = useState<number>(() => parseInt(localStorage.getItem('scrollSpeed') || '15'))
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const libraryScrollRef = useRef<HTMLDivElement>(null)
+  const virtuosoRef = useRef<any>(null)
+  const [scrollParent, setScrollParent] = useState<HTMLElement | null>(null)
   const lastLibraryScrollTopRef = useRef(0)
-  const wasReadingFolderRef = useRef(false)
   const [isLibraryScrolled, setIsLibraryScrolled] = useState(false)
 
   // PERSISTENCE & THEME
@@ -143,6 +150,12 @@ function App(): JSX.Element {
     
     if (savedHistory) setPathHistory(JSON.parse(savedHistory))
     if (savedPath) loadPath(savedPath)
+  }, [])
+
+  useEffect(() => {
+    if (libraryScrollRef.current) {
+      setScrollParent(libraryScrollRef.current)
+    }
   }, [])
 
   useEffect(() => {
@@ -157,18 +170,6 @@ function App(): JSX.Element {
   }, [isLightMode])
   useEffect(() => { localStorage.setItem('readingDir', readingDir) }, [readingDir])
   useEffect(() => { localStorage.setItem('scrollSpeed', scrollSpeed.toString()) }, [scrollSpeed])
-
-  useEffect(() => {
-    if (readingFolder) {
-      wasReadingFolderRef.current = true
-      return
-    }
-
-    if (wasReadingFolderRef.current && libraryScrollRef.current) {
-      libraryScrollRef.current.scrollTop = lastLibraryScrollTopRef.current
-      wasReadingFolderRef.current = false
-    }
-  }, [readingFolder])
 
   const handleLibraryScroll = () => {
     const scrollTop = libraryScrollRef.current?.scrollTop ?? 0
@@ -318,9 +319,9 @@ function App(): JSX.Element {
     </div>
   )
 
-  if (readingFolder) {
-    return (
-      <>
+  return (
+    <>
+      {readingFolder && (
         <Reader
           key={readingFolder}
           folderPath={readingFolder}
@@ -332,23 +333,18 @@ function App(): JSX.Element {
           nextChapterPath={nextChapterPath}
           onOpenChapter={setReadingFolder}
         />
-        {settingsModal}
-      </>
-    )
-  }
+      )}
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      
-      {/* TITLE BAR */}
-      <TitleBar 
-        title="Terraside" 
-        showHome={false} 
-        onSettingsClick={() => setIsSettingsOpen(true)}
-      />
-
-      {/* CENTERED MODAL SETTINGS */}
       {settingsModal}
+
+      <div style={{ display: readingFolder ? 'none' : 'flex', flexDirection: 'column', height: '100vh' }}>
+        
+        {/* TITLE BAR */}
+        <TitleBar 
+          title="Terraside" 
+          showHome={false} 
+          onSettingsClick={() => setIsSettingsOpen(true)}
+        />
 
       {/* MAIN CONTENT */}
       <div ref={libraryScrollRef} onScroll={handleLibraryScroll} style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
@@ -432,30 +428,47 @@ function App(): JSX.Element {
         )}
 
         {/* LIBRARY GRID */}
-        <div className="library-grid" style={{ 
-          display: viewMode === 'grid' ? 'grid' : 'block',
-          gridTemplateColumns: viewMode === 'grid' ? `repeat(${gridColumns}, 1fr)` : 'none'
-        }}>
-          {getProcessedFolders().map((folder) => (
-            viewMode === 'grid' ? (
-              <MangaCard 
-                key={folder.name} 
-                folder={folder} 
-                parentPath={currentPath}
-                onClick={() => handleFolderClick(folder.name)}
-                convertFileSrc={convertFileSrc}
-              />
-            ) : (
-              <div key={folder.name} onClick={() => handleFolderClick(folder.name)}
-                style={{ padding: '15px', background: '#1e1e1e', marginBottom: '5px', cursor: 'pointer', border: '1px solid #333', borderRadius: '6px' }}
-              >
-                📁 {folder.name}
-              </div>
-            )
-          ))}
-        </div>
+        {scrollParent && (
+          <VirtuosoGrid
+            ref={virtuosoRef}
+            useWindowScroll={false}
+            customScrollParent={scrollParent}
+            data={getProcessedFolders()}
+            components={{
+              List: React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>((props, ref) => (
+                <div 
+                  {...props} 
+                  ref={ref} 
+                  className="library-grid" 
+                  style={{ 
+                    ...props.style,
+                    display: viewMode === 'grid' ? 'grid' : 'block',
+                    gridTemplateColumns: viewMode === 'grid' ? `repeat(${gridColumns}, 1fr)` : 'none'
+                  }} 
+                />
+              ))
+            }}
+            itemContent={(_index, folder) => (
+              viewMode === 'grid' ? (
+                <MangaCard 
+                  folder={folder} 
+                  parentPath={currentPath}
+                  onClick={() => handleFolderClick(folder.name)}
+                  convertFileSrc={convertFileSrc}
+                />
+              ) : (
+                <div onClick={() => handleFolderClick(folder.name)}
+                  style={{ padding: '15px', background: 'var(--bg-panel)', marginBottom: '5px', cursor: 'pointer', border: '1px solid var(--border)', borderRadius: '6px' }}
+                >
+                  📁 {folder.name}
+                </div>
+              )
+            )}
+          />
+        )}
       </div>
     </div>
+    </>
   )
 }
 
