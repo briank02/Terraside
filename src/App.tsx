@@ -442,8 +442,9 @@ function App(): JSX.Element {
                   className="library-grid" 
                   style={{ 
                     ...props.style,
-                    display: viewMode === 'grid' ? 'grid' : 'block',
-                    gridTemplateColumns: viewMode === 'grid' ? `repeat(${gridColumns}, 1fr)` : 'none'
+                    display: 'grid',
+                    gridTemplateColumns: viewMode === 'grid' ? `repeat(${gridColumns}, 1fr)` : '1fr',
+                    gap: viewMode === 'grid' ? '20px' : '5px'
                   }} 
                 />
               ))
@@ -458,7 +459,7 @@ function App(): JSX.Element {
                 />
               ) : (
                 <div onClick={() => handleFolderClick(folder.name)}
-                  style={{ padding: '15px', background: 'var(--bg-panel)', marginBottom: '5px', cursor: 'pointer', border: '1px solid var(--border)', borderRadius: '6px' }}
+                  style={{ padding: '15px', background: 'var(--bg-panel)', cursor: 'pointer', border: '1px solid var(--border)', borderRadius: '6px' }}
                 >
                   📁 {folder.name}
                 </div>
