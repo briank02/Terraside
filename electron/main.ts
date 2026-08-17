@@ -12,22 +12,29 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null
+const imagePattern = /\.(png|jpg|jpeg|webp|gif|avif)$/i
+const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
-const scanDirectory = (dirPath: string) => {
+const scanDirectory = async (dirPath: string) => {
   try {
-    const contents = fs.readdirSync(dirPath, { withFileTypes: true })
-    const hasImages = contents.some(d => d.isFile() && /\.(png|jpg|jpeg|webp|gif|avif)$/i.test(d.name))
+    const contents = await fs.promises.readdir(dirPath, { withFileTypes: true })
+    const subfolders: Array<{ name: string; coverPath: null }> = []
+    let hasImages = false
+
+    for (const entry of contents) {
+      if (entry.isDirectory()) {
+        subfolders.push({ name: entry.name, coverPath: null })
+      } else if (!hasImages && entry.isFile() && imagePattern.test(entry.name)) {
+        hasImages = true
+      }
+    }
+
+    subfolders.sort((a, b) => nameCollator.compare(a.name, b.name))
 
     return {
-        path: dirPath,
-        subfolders: contents
-        .filter(d => d.isDirectory())
-        .map(d => ({ 
-            name: d.name, 
-            coverPath: null
-        }))
-        .sort((a,b) => a.name.localeCompare(b.name, undefined, {numeric:true, sensitivity:'base'})),
-        hasImages
+      path: dirPath,
+      subfolders,
+      hasImages
     }
   } catch (e) { 
     console.error(e)
@@ -35,74 +42,78 @@ const scanDirectory = (dirPath: string) => {
   }
 }
 
-// DFS to find the first image
-const getFirstImageDFS = (dirPath: string): string | null => {
-  try {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true })
-    
-    // Separate into files and directories
-    const files = entries.filter(e => e.isFile())
-    const dirs = entries.filter(e => e.isDirectory())
-
-    // Sorting
-    files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
-    dirs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
-
-    // Check for images in the current directory
-    const imageFile = files.find(f => /\.(png|jpg|jpeg|webp|gif|avif)$/i.test(f.name))
-    if (imageFile) {
-      return path.join(dirPath, imageFile.name)
-    }
-
-    // Go Deeper into subdirectories
-    for (const dir of dirs) {
-      const found = getFirstImageDFS(path.join(dirPath, dir.name))
-      if (found) return found
-    }
-
-    // No images found
-    return null
-  } catch (error) {
-    console.error(`Error reading directory for cover: ${dirPath}`, error)
-    return null
-  }
-}
-
-const coverCache = new Map<string, string>()
+const coverCache = new Map<string, string | null>()
+const pendingCoverScans = new Map<string, Promise<string | null>>()
 
 const getFirstImageDFSAsync = async (dirPath: string): Promise<string | null> => {
   if (coverCache.has(dirPath)) {
     return coverCache.get(dirPath) || null
   }
 
-  try {
-    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
-    
-    const files = entries.filter(e => e.isFile())
-    const dirs = entries.filter(e => e.isDirectory())
+  const pendingScan = pendingCoverScans.get(dirPath)
+  if (pendingScan) return pendingScan
 
-    files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
-    dirs.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+  const scan = (async () => {
+    try {
+      const entries = await fs.promises.readdir(dirPath, { withFileTypes: true })
+      const files = entries.filter(e => e.isFile())
+      const dirs = entries.filter(e => e.isDirectory())
 
-    const imageFile = files.find(f => /\.(png|jpg|jpeg|webp|gif|avif)$/i.test(f.name))
-    if (imageFile) {
-      const foundPath = path.join(dirPath, imageFile.name)
-      coverCache.set(dirPath, foundPath)
-      return foundPath
-    }
+      files.sort((a, b) => nameCollator.compare(a.name, b.name))
+      dirs.sort((a, b) => nameCollator.compare(a.name, b.name))
 
-    for (const dir of dirs) {
-      const found = await getFirstImageDFSAsync(path.join(dirPath, dir.name))
-      if (found) {
-        coverCache.set(dirPath, found)
-        return found
+      const imageFile = files.find(f => imagePattern.test(f.name))
+      if (imageFile) return path.join(dirPath, imageFile.name)
+
+      for (const dir of dirs) {
+        const found = await getFirstImageDFSAsync(path.join(dirPath, dir.name))
+        if (found) return found
       }
-    }
 
-    return null
-  } catch (error) {
-    console.error(`Error reading directory for cover: ${dirPath}`, error)
-    return null
+      return null
+    } catch (error) {
+      console.error(`Error reading directory for cover: ${dirPath}`, error)
+      return null
+    }
+  })()
+
+  pendingCoverScans.set(dirPath, scan)
+
+  try {
+    const result = await scan
+    coverCache.set(dirPath, result)
+    return result
+  } finally {
+    pendingCoverScans.delete(dirPath)
+  }
+}
+
+const getFilePathFromRequest = (requestUrl: string, scheme: string) => {
+  let filePath = requestUrl.replace(new RegExp(`^${scheme}:\\/\\/`), '')
+  if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(filePath)) {
+    filePath = filePath.slice(1)
+  }
+  try { return decodeURIComponent(filePath) } catch { return filePath }
+}
+
+const createThumbnailResponse = async (
+  requestUrl: string,
+  scheme: string,
+  size: { width: number; height: number }
+) => {
+  const filePath = getFilePathFromRequest(requestUrl, scheme)
+  try {
+    const thumbnail = await nativeImage.createThumbnailFromPath(filePath, size)
+    if (thumbnail.isEmpty()) throw new Error('Empty thumbnail')
+
+    return new Response(new Uint8Array(thumbnail.toPNG()), {
+      headers: {
+        'Content-Type': 'image/png',
+        'Cache-Control': 'public, max-age=86400'
+      }
+    })
+  } catch {
+    return new Response(fs.createReadStream(filePath) as any)
   }
 }
 
@@ -145,33 +156,20 @@ app.on('activate', () => {
 app.whenReady().then(() => {
   protocol.handle('media', (request) => {
     try {
-      let filePath = request.url.replace(/^media:\/\//, '')
-      if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(filePath)) {
-        filePath = filePath.slice(1)
-      }
-      try { filePath = decodeURIComponent(filePath) } catch {}
+      const filePath = getFilePathFromRequest(request.url, 'media')
       return new Response(fs.createReadStream(filePath) as any)
     } catch { return new Response('Error', { status: 500 }) }
   })
 
   protocol.handle('thumb', async (request) => {
     try {
-      let filePath = request.url.replace(/^thumb:\/\//, '')
-      if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(filePath)) {
-        filePath = filePath.slice(1)
-      }
-      try { filePath = decodeURIComponent(filePath) } catch {}
-      try {
-        const thumb = await nativeImage.createThumbnailFromPath(filePath, { width: 200, height: 200 })
-        if (thumb.isEmpty()) throw new Error('Empty thumbnail')
-        
-        return new Response(new Uint8Array(thumb.toPNG()), {
-          headers: { 'Content-Type': 'image/png' }
-        })
-      } catch (e) {
-        // Fallback to original image if OS thumbnail provider fails
-        return new Response(fs.createReadStream(filePath) as any)
-      }
+      return await createThumbnailResponse(request.url, 'thumb', { width: 200, height: 200 })
+    } catch { return new Response('Error', { status: 500 }) }
+  })
+
+  protocol.handle('cover', async (request) => {
+    try {
+      return await createThumbnailResponse(request.url, 'cover', { width: 400, height: 600 })
     } catch { return new Response('Error', { status: 500 }) }
   })
 
@@ -193,18 +191,18 @@ app.whenReady().then(() => {
   ipcMain.handle('dialog:openDirectory', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     if (canceled) return null
-    return scanDirectory(filePaths[0])
+    return await scanDirectory(filePaths[0])
   })
 
-  ipcMain.handle('folder:read', async (_, p) => scanDirectory(p))
+  ipcMain.handle('folder:read', async (_, p) => await scanDirectory(p))
 
   ipcMain.handle('folder:getImages', async (_, folderPath) => {
     try {
-      const files = fs.readdirSync(folderPath)
+      const files = await fs.promises.readdir(folderPath)
       return files
-        .filter(f => /\.(png|jpg|jpeg|webp|gif|avif)$/i.test(f))
+        .filter(f => imagePattern.test(f))
         .map(f => path.join(folderPath, f))
-        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+        .sort((a, b) => nameCollator.compare(a, b))
     } catch { return [] }
   })
 

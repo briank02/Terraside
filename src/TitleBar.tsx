@@ -12,13 +12,13 @@ export default function TitleBar({ title, onSettingsClick, onHomeClick, showHome
 
   useEffect(() => {
       const handleStateChange = (state: boolean) => setIsMaximized(state);
-      (window as any).api.on('window:state-change', handleStateChange)
-      return () => (window as any).api.off('window:state-change')
+      window.api.on('window:state-change', handleStateChange)
+      return () => window.api.off('window:state-change')
   }, [])
 
-  const handleMin = () => (window as any).api.minimize()
-  const handleMax = () => (window as any).api.toggleMaximize()
-  const handleClose = () => (window as any).api.close()
+  const handleMin = () => window.api.minimize()
+  const handleMax = () => window.api.toggleMaximize()
+  const handleClose = () => window.api.close()
 
   return (
     <div style={{

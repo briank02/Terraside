@@ -52,7 +52,7 @@ export default function Reader({
 
   // LOAD
   useEffect(() => {
-    (window as any).api.getImages(folderPath).then(setPages)
+    window.api.getImages(folderPath).then(setPages)
   }, [folderPath])
 
   // PERSISTENCE

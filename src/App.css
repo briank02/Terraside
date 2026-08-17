@@ -76,8 +76,17 @@
 .library-grid {
   display: grid;
   width: 100%;
-  gap: 20px;
+  grid-template-columns: var(--library-grid-columns, repeat(4, minmax(0, 1fr)));
+  gap: var(--library-grid-gap, 20px);
   padding-bottom: 50px;
+}
+
+.library-list-item {
+  padding: 15px;
+  background: var(--bg-panel);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
 .grid-cell {
@@ -141,6 +150,30 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+.card-badge {
+  position: absolute;
+  top: 8px;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #444;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  font-size: 11px;
+  font-weight: bold;
+  backdrop-filter: blur(4px);
+}
+
+.rating-badge {
+  left: 8px;
+  color: #FFD700;
+}
+
+.progress-badge {
+  right: 8px;
 }
 
 .card-title {

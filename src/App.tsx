@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { VirtuosoGrid } from 'react-virtuoso'
 import './App.css'
 import Reader from './Reader'
@@ -9,50 +9,123 @@ type SortMode = 'alpha' | 'random' | 'rating' | 'unread'
 type ReadingDir = 'rtl' | 'ltr'
 
 const coverCache = new Map<string, string | 'empty'>()
+const pendingCoverRequests = new Map<string, Promise<string | 'empty'>>()
+const coverRequestQueue: Array<{
+  fullPath: string
+  resolve: (cover: string | 'empty') => void
+}> = []
+const MAX_CONCURRENT_COVER_REQUESTS = 6
+let activeCoverRequests = 0
 
-const MangaCard = ({ folder, parentPath, onClick, convertFileSrc }: any) => {
-  const fullPath = parentPath + '\\' + folder.name
-  const [cover, setCover] = useState<string | null>(coverCache.get(fullPath) || null)
-  const [progress, setProgress] = useState<string | null>(null)
-  const [rating, setRating] = useState<string | null>(null)
-  const cardRef = useRef<HTMLDivElement>(null)
+interface LibraryItem extends FolderData {
+  fullPath: string
+  lowerName: string
+  progress: string | null
+  rating: number
+  unread: boolean
+}
+
+interface MangaCardProps {
+  item: LibraryItem
+  onOpen: (folderName: string) => void
+}
+
+const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+
+const convertCoverSrc = (filePath: string) => `cover:///${encodeURI(filePath.replace(/\\/g, '/'))}`
+
+const joinPath = (parentPath: string, name: string) => {
+  const separator = parentPath.endsWith('\\') || parentPath.endsWith('/')
+    ? ''
+    : (parentPath.includes('\\') ? '\\' : '/')
+  return parentPath + separator + name
+}
+
+// A stable pseudo-random rank keeps Random view fixed until a new seed is chosen.
+const getRandomRank = (value: string, seed: number) => {
+  let hash = (2166136261 ^ seed) >>> 0
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  hash ^= hash >>> 16
+  hash = Math.imul(hash, 0x7feb352d)
+  hash ^= hash >>> 15
+  hash = Math.imul(hash, 0x846ca68b)
+  return (hash ^ (hash >>> 16)) >>> 0
+}
+
+const pumpCoverQueue = () => {
+  while (activeCoverRequests < MAX_CONCURRENT_COVER_REQUESTS && coverRequestQueue.length > 0) {
+    const request = coverRequestQueue.shift()!
+    activeCoverRequests += 1
+
+    window.api.getCover(request.fullPath)
+      .then((filePath) => request.resolve(filePath ? convertCoverSrc(filePath) : 'empty'))
+      .catch(() => request.resolve('empty'))
+      .finally(() => {
+        activeCoverRequests -= 1
+        pumpCoverQueue()
+      })
+  }
+}
+
+const requestCover = (fullPath: string) => {
+  const cached = coverCache.get(fullPath)
+  if (cached) return Promise.resolve(cached)
+
+  const pending = pendingCoverRequests.get(fullPath)
+  if (pending) return pending
+
+  const request = new Promise<string | 'empty'>((resolve) => {
+    coverRequestQueue.push({ fullPath, resolve })
+    pumpCoverQueue()
+  }).then((cover) => {
+    coverCache.set(fullPath, cover)
+    pendingCoverRequests.delete(fullPath)
+    return cover
+  })
+
+  pendingCoverRequests.set(fullPath, request)
+  return request
+}
+
+const LibraryGrid = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  (props, ref) => <div {...props} ref={ref} className="library-grid" />
+)
+LibraryGrid.displayName = 'LibraryGrid'
+
+const libraryGridComponents = { List: LibraryGrid }
+const getLibraryItemKey = (_index: number, item: LibraryItem) => item.fullPath
+
+const MangaCard = memo(({ item, onOpen }: MangaCardProps) => {
+  const [cover, setCover] = useState<string | null>(() => coverCache.get(item.fullPath) ?? null)
 
   useEffect(() => {
-    // Check progress
-    const savedPage = localStorage.getItem(`progress:${fullPath}`)
-    if (savedPage && savedPage !== '1') {
-      setProgress(savedPage)
-    }
-
-    // Check rating
-    const savedRating = localStorage.getItem(`rating:${fullPath}`)
-    if (savedRating && savedRating !== '0') {
-      setRating(savedRating)
-    }
-
     let isActive = true
-    let timeoutId: any
+    const cached = coverCache.get(item.fullPath)
+    setCover(cached ?? null)
 
-    if (!coverCache.has(fullPath)) {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    if (!cached) {
+      // Avoid queueing covers for cards that disappear during a fast scroll.
       timeoutId = setTimeout(() => {
         if (!isActive) return
-        (window as any).api.getCover(fullPath).then((path: string | null) => {
+        requestCover(item.fullPath).then((result) => {
           if (!isActive) return
-          const result = path ? convertFileSrc(path) : 'empty'
           setCover(result)
-          coverCache.set(fullPath, result)
         })
-      }, 150)
+      }, 100)
     }
 
     return () => {
       isActive = false
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [fullPath])
+  }, [item.fullPath])
 
-return (
-    <div className="grid-cell" onClick={onClick} ref={cardRef}>
+  return (
+    <div className="grid-cell" onClick={() => onOpen(item.name)}>
       <div className="manga-card">
         <div className="card-image-area">
           {cover && cover !== 'empty' ? (
@@ -64,55 +137,27 @@ return (
           )}
           
           {/* Rating Badge */}
-          {rating && (
-            <div style={{
-              position: 'absolute',
-              top: '8px',
-              left: '8px',
-              background: 'rgba(0, 0, 0, 0.8)',
-              color: '#FFD700',
-              padding: '4px 8px',
-              borderRadius: '4px',
-              fontSize: '11px',
-              fontWeight: 'bold',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
-              border: '1px solid #444',
-              backdropFilter: 'blur(4px)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}>
-              ★ {rating}
+          {item.rating > 0 && (
+            <div className="card-badge rating-badge">
+              ★ {item.rating}
             </div>
           )}
 
           {/* Progress Badge */}
-          {progress && (
-            <div style={{
-              position: 'absolute',
-              top: '8px',
-              right: '8px',
-              background: 'rgba(0, 0, 0, 0.8)',
-              color: '#fff',
-              padding: '4px 8px',
-              borderRadius: '4px',
-              fontSize: '11px',
-              fontWeight: 'bold',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.5)',
-              border: '1px solid #444',
-              backdropFilter: 'blur(4px)'
-            }}>
-              Page {progress}
+          {item.progress && (
+            <div className="card-badge progress-badge">
+              Page {item.progress}
             </div>
           )}
         </div>
         <div className="card-title">
-          <span className="title-text">{folder.name}</span>
+          <span className="title-text">{item.name}</span>
         </div>
       </div>
     </div>
   )
-}
+})
+MangaCard.displayName = 'MangaCard'
 
 function App(): JSX.Element {
   // DATA
@@ -129,6 +174,8 @@ function App(): JSX.Element {
   const [searchTerm, setSearchTerm] = useState<string>('') 
   const [activeSearch, setActiveSearch] = useState<string>('') 
   const [sortMode, setSortMode] = useState<SortMode>('alpha')
+  const [randomSeed, setRandomSeed] = useState(0)
+  const [metadataVersion, setMetadataVersion] = useState(0)
 
   // SETTINGS
   const [isLightMode, setIsLightMode] = useState(localStorage.getItem('theme') === 'light')
@@ -138,13 +185,16 @@ function App(): JSX.Element {
   const [scrollSpeed, setScrollSpeed] = useState<number>(() => parseInt(localStorage.getItem('scrollSpeed') || '15'))
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const libraryScrollRef = useRef<HTMLDivElement>(null)
-  const virtuosoRef = useRef<any>(null)
   const [scrollParent, setScrollParent] = useState<HTMLElement | null>(null)
-  const lastLibraryScrollTopRef = useRef(0)
   const [isLibraryScrolled, setIsLibraryScrolled] = useState(false)
+  const isLibraryScrolledRef = useRef(false)
+  const didRestoreLibraryRef = useRef(false)
 
   // PERSISTENCE & THEME
   useEffect(() => {
+    if (didRestoreLibraryRef.current) return
+    didRestoreLibraryRef.current = true
+
     const savedPath = localStorage.getItem('lastLibraryPath')
     const savedHistory = localStorage.getItem('pathHistory')
     
@@ -174,12 +224,15 @@ function App(): JSX.Element {
   const handleLibraryScroll = () => {
     const scrollTop = libraryScrollRef.current?.scrollTop ?? 0
     const nextIsScrolled = scrollTop > 0
-    setIsLibraryScrolled(prev => prev === nextIsScrolled ? prev : nextIsScrolled)
+    if (nextIsScrolled !== isLibraryScrolledRef.current) {
+      isLibraryScrolledRef.current = nextIsScrolled
+      setIsLibraryScrolled(nextIsScrolled)
+    }
   }
 
   // LOGIC
   const loadPath = async (path: string) => {
-    const result = await (window as any).api.readFolder(path)
+    const result = await window.api.readFolder(path)
     if (result) {
       setCurrentPath(result.path)
       setFolders(result.subfolders)
@@ -188,7 +241,7 @@ function App(): JSX.Element {
   }
 
   const handleSelectFolder = async () => {
-    const result = await (window as any).api.selectFolder()
+    const result = await window.api.selectFolder()
     if (result) {
       setPathHistory([])
       setCurrentPath(result.path)
@@ -197,13 +250,10 @@ function App(): JSX.Element {
     }
   }
 
-  const handleFolderClick = async (folderName: string) => {
-    const separator = currentPath.endsWith('\\') || currentPath.endsWith('/') 
-      ? '' 
-      : (currentPath.includes('\\') ? '\\' : '/')
-    const targetPath = currentPath + separator + folderName
+  const handleFolderClick = useCallback(async (folderName: string) => {
+    const targetPath = joinPath(currentPath, folderName)
     
-    const result = await (window as any).api.readFolder(targetPath)
+    const result = await window.api.readFolder(targetPath)
     
     if (result) {
       if (result.subfolders.length > 0) {
@@ -212,18 +262,17 @@ function App(): JSX.Element {
         setFolders(result.subfolders)
         localStorage.setItem('lastLibraryPath', result.path)
       } else {
-        lastLibraryScrollTopRef.current = libraryScrollRef.current?.scrollTop ?? 0
         setReadingFolder(targetPath)
       }
     }
-  }
+  }, [currentPath])
 
   const handleBack = async () => {
     if (pathHistory.length === 0) return
     const newHistory = [...pathHistory]
     const prevPath = newHistory.pop()! // Get the last path
     
-    const result = await (window as any).api.readFolder(prevPath)
+    const result = await window.api.readFolder(prevPath)
     if (result) {
       setCurrentPath(result.path)
       setFolders(result.subfolders)
@@ -232,55 +281,91 @@ function App(): JSX.Element {
     }
   }
 
-  const convertFileSrc = (path: string) => `media:///${encodeURI(path.replace(/\\/g, '/'))}`
+  const libraryItems = useMemo<LibraryItem[]>(() => folders.map((folder) => {
+    const fullPath = joinPath(currentPath, folder.name)
+    const parsedRating = Number.parseInt(localStorage.getItem(`rating:${fullPath}`) || '0', 10)
+    const rating = Number.isNaN(parsedRating) ? 0 : parsedRating
+    const savedProgress = localStorage.getItem(`progress:${fullPath}`)
 
-  const getFolderPath = (folderName: string) => {
-    const separator = currentPath.endsWith('\\') || currentPath.endsWith('/')
-      ? ''
-      : (currentPath.includes('\\') ? '\\' : '/')
-    return currentPath + separator + folderName
-  }
+    return {
+      ...folder,
+      fullPath,
+      lowerName: folder.name.toLocaleLowerCase(),
+      progress: savedProgress && savedProgress !== '1' ? savedProgress : null,
+      rating,
+      unread: rating === 0 && localStorage.getItem(`finished:${fullPath}`) !== 'true'
+    }
+  }), [currentPath, folders, metadataVersion])
 
-  const compareByName = (a: FolderData, b: FolderData) => (
-    a.name.localeCompare(b.name, undefined, { numeric: true })
-  )
+  const randomRanks = useMemo(() => {
+    const ranks = new Map<string, number>()
+    if (sortMode === 'random') {
+      for (const folder of folders) {
+        const fullPath = joinPath(currentPath, folder.name)
+        ranks.set(fullPath, getRandomRank(fullPath, randomSeed))
+      }
+    }
+    return ranks
+  }, [currentPath, folders, randomSeed, sortMode])
 
-  const getRatingValue = (folder: FolderData) => {
-    const rating = parseInt(localStorage.getItem(`rating:${getFolderPath(folder.name)}`) || '0')
-    return isNaN(rating) ? 0 : rating
-  }
+  const processedFolders = useMemo(() => {
+    const normalizedSearch = activeSearch.trim().toLocaleLowerCase()
+    const processed = normalizedSearch
+      ? libraryItems.filter((folder) => folder.lowerName.includes(normalizedSearch))
+      : [...libraryItems]
 
-  const isUnread = (folder: FolderData) => {
-    const folderPath = getFolderPath(folder.name)
-    const rating = parseInt(localStorage.getItem(`rating:${folderPath}`) || '0')
-    const isRated = !isNaN(rating) && rating > 0
-    const isFinished = localStorage.getItem(`finished:${folderPath}`) === 'true'
-    return !isRated && !isFinished
-  }
-
-  const getProcessedFolders = () => {
-    let processed = folders.filter(f => f.name.toLowerCase().includes(activeSearch.toLowerCase()))
-    if (sortMode === 'random') processed = [...processed].sort(() => Math.random() - 0.5)
-    else if (sortMode === 'rating') {
-      processed.sort((a, b) => {
-        const ratingDiff = getRatingValue(b) - getRatingValue(a)
-        return ratingDiff || compareByName(a, b)
-      })
+    if (sortMode === 'random') {
+      processed.sort((a, b) => (
+        (randomRanks.get(a.fullPath) ?? 0) - (randomRanks.get(b.fullPath) ?? 0)
+        || nameCollator.compare(a.name, b.name)
+      ))
+    } else if (sortMode === 'rating') {
+      processed.sort((a, b) => b.rating - a.rating || nameCollator.compare(a.name, b.name))
     } else if (sortMode === 'unread') {
-      processed.sort((a, b) => {
-        const unreadDiff = Number(isUnread(b)) - Number(isUnread(a))
-        return unreadDiff || compareByName(a, b)
-      })
-    } else processed.sort(compareByName)
+      processed.sort((a, b) => Number(b.unread) - Number(a.unread) || nameCollator.compare(a.name, b.name))
+    } else {
+      processed.sort((a, b) => nameCollator.compare(a.name, b.name))
+    }
+
     return processed
+  }, [activeSearch, libraryItems, randomRanks, sortMode])
+
+  const handleSortModeChange = (nextMode: SortMode) => {
+    if (nextMode === 'random' && sortMode !== 'random') {
+      setRandomSeed(Math.floor(Math.random() * 0xffffffff))
+    }
+    setSortMode(nextMode)
   }
 
-  const chapterPaths = folders.map(folder => getFolderPath(folder.name))
+  const chapterPaths = useMemo(
+    () => folders.map(folder => joinPath(currentPath, folder.name)),
+    [currentPath, folders]
+  )
   const currentChapterIndex = readingFolder ? chapterPaths.indexOf(readingFolder) : -1
   const previousChapterPath = currentChapterIndex > 0 ? chapterPaths[currentChapterIndex - 1] : null
   const nextChapterPath = currentChapterIndex >= 0 && currentChapterIndex < chapterPaths.length - 1
     ? chapterPaths[currentChapterIndex + 1]
     : null
+
+  const closeReader = useCallback(() => {
+    setReadingFolder(null)
+    setMetadataVersion(version => version + 1)
+  }, [])
+
+  const libraryLayoutStyle = {
+    '--library-grid-columns': viewMode === 'grid' ? `repeat(${gridColumns}, minmax(0, 1fr))` : '1fr',
+    '--library-grid-gap': viewMode === 'grid' ? '20px' : '5px'
+  } as React.CSSProperties
+
+  const renderLibraryItem = useCallback((_index: number, item: LibraryItem) => (
+    viewMode === 'grid' ? (
+      <MangaCard item={item} onOpen={handleFolderClick} />
+    ) : (
+      <div onClick={() => handleFolderClick(item.name)} className="library-list-item">
+        📁 {item.name}
+      </div>
+    )
+  ), [handleFolderClick, viewMode])
 
   const settingsModal = isSettingsOpen && (
     <div className="modal-overlay" onClick={() => setIsSettingsOpen(false)}>
@@ -325,7 +410,7 @@ function App(): JSX.Element {
         <Reader
           key={readingFolder}
           folderPath={readingFolder}
-          onClose={() => setReadingFolder(null)}
+          onClose={closeReader}
           onSettingsClick={() => setIsSettingsOpen(true)}
           readingDir={readingDir}
           scrollSpeed={scrollSpeed}
@@ -347,7 +432,7 @@ function App(): JSX.Element {
         />
 
       {/* MAIN CONTENT */}
-      <div ref={libraryScrollRef} onScroll={handleLibraryScroll} style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+      <div ref={libraryScrollRef} onScroll={handleLibraryScroll} style={{ padding: '20px', overflowY: 'auto', flex: 1, ...libraryLayoutStyle }}>
         {/* CONTROLS */}
         <div className={`toolbar ${isLibraryScrolled ? 'toolbar-scrolled' : ''}`} style={{ borderRadius: '8px', marginBottom: '20px' }}>
           
@@ -392,7 +477,7 @@ function App(): JSX.Element {
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             
             <select 
-              value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}
+              value={sortMode} onChange={(e) => handleSortModeChange(e.target.value as SortMode)}
               className="input-dark"
               style={{ cursor: 'pointer', fontSize: '15px' }}
             >
@@ -430,41 +515,12 @@ function App(): JSX.Element {
         {/* LIBRARY GRID */}
         {scrollParent && (
           <VirtuosoGrid
-            ref={virtuosoRef}
             useWindowScroll={false}
             customScrollParent={scrollParent}
-            data={getProcessedFolders()}
-            components={{
-              List: React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>((props, ref) => (
-                <div 
-                  {...props} 
-                  ref={ref} 
-                  className="library-grid" 
-                  style={{ 
-                    ...props.style,
-                    display: 'grid',
-                    gridTemplateColumns: viewMode === 'grid' ? `repeat(${gridColumns}, 1fr)` : '1fr',
-                    gap: viewMode === 'grid' ? '20px' : '5px'
-                  }} 
-                />
-              ))
-            }}
-            itemContent={(_index, folder) => (
-              viewMode === 'grid' ? (
-                <MangaCard 
-                  folder={folder} 
-                  parentPath={currentPath}
-                  onClick={() => handleFolderClick(folder.name)}
-                  convertFileSrc={convertFileSrc}
-                />
-              ) : (
-                <div onClick={() => handleFolderClick(folder.name)}
-                  style={{ padding: '15px', background: 'var(--bg-panel)', cursor: 'pointer', border: '1px solid var(--border)', borderRadius: '6px' }}
-                >
-                  📁 {folder.name}
-                </div>
-              )
-            )}
+            data={processedFolders}
+            components={libraryGridComponents}
+            computeItemKey={getLibraryItemKey}
+            itemContent={renderLibraryItem}
           />
         )}
       </div>
