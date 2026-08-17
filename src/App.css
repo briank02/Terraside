@@ -60,17 +60,16 @@
   position: sticky;
   top: 0;
   z-index: 500;
-  transition: background 0.2s ease, box-shadow 0.2s ease, backdrop-filter 0.2s ease;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
 }
 
 .toolbar-scrolled {
-  background: rgba(30, 30, 30, 0.78);
-  backdrop-filter: blur(12px);
+  background: var(--bg-panel);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
 
 .light-theme .toolbar-scrolled {
-  background: rgba(224, 224, 224, 0.78);
+  background: var(--bg-panel);
 }
 
 .library-grid {
@@ -89,13 +88,24 @@
   border-radius: 6px;
 }
 
+.scroll-seek-placeholder {
+  background: #252525;
+  border: 1px solid #333;
+  border-radius: 8px;
+}
+
+.light-theme .scroll-seek-placeholder {
+  background: #ddd;
+  border-color: #ccc;
+}
+
 .grid-cell {
   position: relative;
   aspect-ratio: 2 / 3;
   width: 100%;
 }
 
-.grid-cell:hover {
+.library-scroll:not(.library-scrolling) .grid-cell:hover {
   z-index: 200;
 }
 
@@ -113,13 +123,13 @@
   display: flex;
   flex-direction: column; 
   
-  transition: all 0.2s ease-in-out;
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out, background-color 0.2s ease-in-out;
   z-index: 1;
   overflow: hidden;
   cursor: pointer;
 }
 
-.manga-card:hover {
+.library-scroll:not(.library-scrolling) .manga-card:hover {
   height: auto;
   min-height: 100%;
   
@@ -141,7 +151,7 @@
   overflow: hidden; 
 }
 
-.manga-card:hover .card-image-area {
+.library-scroll:not(.library-scrolling) .manga-card:hover .card-image-area {
   aspect-ratio: 2/3; 
   flex: none;
 }
@@ -164,7 +174,6 @@
   box-shadow: 0 2px 4px rgba(0,0,0,0.5);
   font-size: 11px;
   font-weight: bold;
-  backdrop-filter: blur(4px);
 }
 
 .rating-badge {
@@ -206,12 +215,12 @@
   text-overflow: ellipsis;
 }
 
-.manga-card:hover .card-title {
+.library-scroll:not(.library-scrolling) .manga-card:hover .card-title {
   height: auto;
   min-height: 45px;
 }
 
-.manga-card:hover .title-text {
+.library-scroll:not(.library-scrolling) .manga-card:hover .title-text {
   white-space: normal;
   overflow: visible;
   padding: 10px 0;
@@ -346,4 +355,13 @@ input[type=number] {
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite linear;
   border-radius: 4px;
+}
+
+.library-scrolling .manga-card {
+  pointer-events: none;
+  transition: none;
+}
+
+.library-scrolling .skeleton {
+  animation-play-state: paused;
 }

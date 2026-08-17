@@ -1,5 +1,9 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { VirtuosoGrid } from 'react-virtuoso'
+import {
+  VirtuosoGrid,
+  type GridScrollSeekPlaceholderProps,
+  type ScrollSeekConfiguration
+} from 'react-virtuoso'
 import './App.css'
 import Reader from './Reader'
 import TitleBar from './TitleBar'
@@ -14,7 +18,7 @@ const coverRequestQueue: Array<{
   fullPath: string
   resolve: (cover: string | 'empty') => void
 }> = []
-const MAX_CONCURRENT_COVER_REQUESTS = 6
+const MAX_CONCURRENT_COVER_REQUESTS = 3
 let activeCoverRequests = 0
 
 interface LibraryItem extends FolderData {
@@ -95,7 +99,19 @@ const LibraryGrid = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
 )
 LibraryGrid.displayName = 'LibraryGrid'
 
-const libraryGridComponents = { List: LibraryGrid }
+const ScrollSeekPlaceholder = ({ height, width }: GridScrollSeekPlaceholderProps) => (
+  <div className="scroll-seek-placeholder" style={{ height, width }} />
+)
+
+const libraryGridComponents = {
+  List: LibraryGrid,
+  ScrollSeekPlaceholder
+}
+const libraryScrollSeekConfiguration: ScrollSeekConfiguration = {
+  enter: (velocity) => Math.abs(velocity) > 700,
+  exit: (velocity) => Math.abs(velocity) < 120
+}
+const libraryOverscan = { main: 200, reverse: 100 }
 const getLibraryItemKey = (_index: number, item: LibraryItem) => item.fullPath
 
 const MangaCard = memo(({ item, onOpen }: MangaCardProps) => {
@@ -187,6 +203,7 @@ function App(): JSX.Element {
   const libraryScrollRef = useRef<HTMLDivElement>(null)
   const [scrollParent, setScrollParent] = useState<HTMLElement | null>(null)
   const [isLibraryScrolled, setIsLibraryScrolled] = useState(false)
+  const [isLibraryScrolling, setIsLibraryScrolling] = useState(false)
   const isLibraryScrolledRef = useRef(false)
   const didRestoreLibraryRef = useRef(false)
 
@@ -331,6 +348,9 @@ function App(): JSX.Element {
   }, [activeSearch, libraryItems, randomRanks, sortMode])
 
   const handleSortModeChange = (nextMode: SortMode) => {
+    if (nextMode === sortMode) return
+
+    libraryScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' })
     if (nextMode === 'random' && sortMode !== 'random') {
       setRandomSeed(Math.floor(Math.random() * 0xffffffff))
     }
@@ -350,6 +370,10 @@ function App(): JSX.Element {
   const closeReader = useCallback(() => {
     setReadingFolder(null)
     setMetadataVersion(version => version + 1)
+  }, [])
+
+  const handleScrollingChange = useCallback((isScrolling: boolean) => {
+    setIsLibraryScrolling(isScrolling)
   }, [])
 
   const libraryLayoutStyle = {
@@ -432,9 +456,14 @@ function App(): JSX.Element {
         />
 
       {/* MAIN CONTENT */}
-      <div ref={libraryScrollRef} onScroll={handleLibraryScroll} style={{ padding: '20px', overflowY: 'auto', flex: 1, ...libraryLayoutStyle }}>
+      <div
+        ref={libraryScrollRef}
+        onScroll={handleLibraryScroll}
+        className={`library-scroll${isLibraryScrolling ? ' library-scrolling' : ''}`}
+        style={{ padding: '0 20px 20px', overflowY: 'auto', flex: 1, ...libraryLayoutStyle }}
+      >
         {/* CONTROLS */}
-        <div className={`toolbar ${isLibraryScrolled ? 'toolbar-scrolled' : ''}`} style={{ borderRadius: '8px', marginBottom: '20px' }}>
+        <div className={`toolbar ${isLibraryScrolled ? 'toolbar-scrolled' : ''}`} style={{ borderRadius: '0 0 8px 8px', marginBottom: '20px' }}>
           
           {/* SEARCH */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
@@ -521,6 +550,9 @@ function App(): JSX.Element {
             components={libraryGridComponents}
             computeItemKey={getLibraryItemKey}
             itemContent={renderLibraryItem}
+            isScrolling={handleScrollingChange}
+            overscan={libraryOverscan}
+            scrollSeekConfiguration={libraryScrollSeekConfiguration}
           />
         )}
       </div>
