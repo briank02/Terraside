@@ -7,8 +7,9 @@ import {
 import './App.css'
 import Reader from './Reader'
 import TitleBar from './TitleBar'
+import { getRandomRank, joinPath } from './library-utils'
 
-interface FolderData { name: string; coverPath: string | null }
+interface FolderData { name: string }
 type SortMode = 'alpha' | 'random' | 'rating' | 'unread'
 type ReadingDir = 'rtl' | 'ltr'
 
@@ -37,27 +38,6 @@ interface MangaCardProps {
 const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
 const convertCoverSrc = (filePath: string) => `cover:///${encodeURI(filePath.replace(/\\/g, '/'))}`
-
-const joinPath = (parentPath: string, name: string) => {
-  const separator = parentPath.endsWith('\\') || parentPath.endsWith('/')
-    ? ''
-    : (parentPath.includes('\\') ? '\\' : '/')
-  return parentPath + separator + name
-}
-
-// A stable pseudo-random rank keeps Random view fixed until a new seed is chosen.
-const getRandomRank = (value: string, seed: number) => {
-  let hash = (2166136261 ^ seed) >>> 0
-  for (let i = 0; i < value.length; i++) {
-    hash ^= value.charCodeAt(i)
-    hash = Math.imul(hash, 16777619)
-  }
-  hash ^= hash >>> 16
-  hash = Math.imul(hash, 0x7feb352d)
-  hash ^= hash >>> 15
-  hash = Math.imul(hash, 0x846ca68b)
-  return (hash ^ (hash >>> 16)) >>> 0
-}
 
 const pumpCoverQueue = () => {
   while (activeCoverRequests < MAX_CONCURRENT_COVER_REQUESTS && coverRequestQueue.length > 0) {
@@ -191,7 +171,7 @@ function App(): JSX.Element {
   const [activeSearch, setActiveSearch] = useState<string>('') 
   const [sortMode, setSortMode] = useState<SortMode>('alpha')
   const [randomSeed, setRandomSeed] = useState(0)
-  const [metadataVersion, setMetadataVersion] = useState(0)
+  const [metadataRevision, setMetadataRevision] = useState(0)
 
   // SETTINGS
   const [isLightMode, setIsLightMode] = useState(localStorage.getItem('theme') === 'light')
@@ -298,21 +278,26 @@ function App(): JSX.Element {
     }
   }
 
-  const libraryItems = useMemo<LibraryItem[]>(() => folders.map((folder) => {
-    const fullPath = joinPath(currentPath, folder.name)
-    const parsedRating = Number.parseInt(localStorage.getItem(`rating:${fullPath}`) || '0', 10)
-    const rating = Number.isNaN(parsedRating) ? 0 : parsedRating
-    const savedProgress = localStorage.getItem(`progress:${fullPath}`)
+  const libraryItems = useMemo<LibraryItem[]>(() => {
+    // Re-read localStorage after closing the reader, even when the folder list is unchanged.
+    void metadataRevision
 
-    return {
-      ...folder,
-      fullPath,
-      lowerName: folder.name.toLocaleLowerCase(),
-      progress: savedProgress && savedProgress !== '1' ? savedProgress : null,
-      rating,
-      unread: rating === 0 && localStorage.getItem(`finished:${fullPath}`) !== 'true'
-    }
-  }), [currentPath, folders, metadataVersion])
+    return folders.map((folder) => {
+      const fullPath = joinPath(currentPath, folder.name)
+      const parsedRating = Number.parseInt(localStorage.getItem(`rating:${fullPath}`) || '0', 10)
+      const rating = Number.isNaN(parsedRating) ? 0 : parsedRating
+      const savedProgress = localStorage.getItem(`progress:${fullPath}`)
+
+      return {
+        ...folder,
+        fullPath,
+        lowerName: folder.name.toLocaleLowerCase(),
+        progress: savedProgress && savedProgress !== '1' ? savedProgress : null,
+        rating,
+        unread: rating === 0 && localStorage.getItem(`finished:${fullPath}`) !== 'true'
+      }
+    })
+  }, [currentPath, folders, metadataRevision])
 
   const randomRanks = useMemo(() => {
     const ranks = new Map<string, number>()
@@ -369,7 +354,7 @@ function App(): JSX.Element {
 
   const closeReader = useCallback(() => {
     setReadingFolder(null)
-    setMetadataVersion(version => version + 1)
+    setMetadataRevision(revision => revision + 1)
   }, [])
 
   const handleScrollingChange = useCallback((isScrolling: boolean) => {

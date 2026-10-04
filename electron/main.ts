@@ -1,5 +1,5 @@
-import { app, BrowserWindow, ipcMain, dialog, protocol, nativeImage } from 'electron'
-import { fileURLToPath } from 'node:url'
+import { app, BrowserWindow, ipcMain, dialog, protocol, nativeImage, net } from 'electron'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 import fs from 'fs'
 
@@ -18,14 +18,11 @@ const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 
 const scanDirectory = async (dirPath: string) => {
   try {
     const contents = await fs.promises.readdir(dirPath, { withFileTypes: true })
-    const subfolders: Array<{ name: string; coverPath: null }> = []
-    let hasImages = false
+    const subfolders: Array<{ name: string }> = []
 
     for (const entry of contents) {
       if (entry.isDirectory()) {
-        subfolders.push({ name: entry.name, coverPath: null })
-      } else if (!hasImages && entry.isFile() && imagePattern.test(entry.name)) {
-        hasImages = true
+        subfolders.push({ name: entry.name })
       }
     }
 
@@ -33,8 +30,7 @@ const scanDirectory = async (dirPath: string) => {
 
     return {
       path: dirPath,
-      subfolders,
-      hasImages
+      subfolders
     }
   } catch (e) { 
     console.error(e)
@@ -113,7 +109,7 @@ const createThumbnailResponse = async (
       }
     })
   } catch {
-    return new Response(fs.createReadStream(filePath) as any)
+    return net.fetch(pathToFileURL(filePath).toString())
   }
 }
 
@@ -121,9 +117,8 @@ function createWindow() {
   win = new BrowserWindow({
     frame: false,
     show: false,
-    icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
+      preload: path.join(__dirname, 'preload.js'),
       webSecurity: false
     },
   })
@@ -154,10 +149,10 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(() => {
-  protocol.handle('media', (request) => {
+  protocol.handle('media', async (request) => {
     try {
       const filePath = getFilePathFromRequest(request.url, 'media')
-      return new Response(fs.createReadStream(filePath) as any)
+      return await net.fetch(pathToFileURL(filePath).toString())
     } catch { return new Response('Error', { status: 500 }) }
   })
 

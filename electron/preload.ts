@@ -10,15 +10,15 @@ const api = {
   toggleMaximize: () => ipcRenderer.send('window:maximize'),
   close: () => ipcRenderer.send('window:close'),
 
-  on: (channel: string, func: (...args: any[]) => void) => {
-      ipcRenderer.on(channel, (_, ...args) => func(...args))
-  },
-  off: (channel: string) => ipcRenderer.removeAllListeners(channel) 
+  onWindowStateChange: (func: (isMaximized: boolean) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, isMaximized: boolean) => func(isMaximized)
+    ipcRenderer.on('window:state-change', listener)
+    return () => ipcRenderer.removeListener('window:state-change', listener)
+  }
 }
 
 if (process.contextIsolated) {
   try { contextBridge.exposeInMainWorld('api', api) } catch (error) { console.error(error) }
 } else {
-  // @ts-ignore
   window.api = api
 }

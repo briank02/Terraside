@@ -1,8 +1,10 @@
-import React, { useEffect, useState, useRef, type WheelEvent } from 'react'
+import React, { useCallback, useEffect, useState, useRef, type WheelEvent } from 'react'
 import { VirtuosoGrid } from 'react-virtuoso'
 import TitleBar from './TitleBar'
+import { parseSavedPage } from './reader-utils'
 
 type ReadingDir = 'rtl' | 'ltr'
+type ViewMode = 'vertical' | 'horizontal'
 
 interface ReaderProps {
   folderPath: string
@@ -15,6 +17,10 @@ interface ReaderProps {
   onOpenChapter: (folderPath: string) => void
 }
 
+const getSavedPage = (folderPath: string) => {
+  return parseSavedPage(localStorage.getItem(`progress:${folderPath}`))
+}
+
 export default function Reader({
   folderPath,
   onClose,
@@ -25,17 +31,17 @@ export default function Reader({
   nextChapterPath,
   onOpenChapter
 }: ReaderProps) {
-  const [viewMode, setViewMode] = useState<'vertical' | 'horizontal'>(
-    (localStorage.getItem('viewMode') as any) || 'horizontal'
-  )
+  const [viewMode, setViewMode] = useState<ViewMode>(() => (
+    localStorage.getItem('viewMode') === 'vertical' ? 'vertical' : 'horizontal'
+  ))
   
   const [imageWidth, setImageWidth] = useState<number>(viewMode === 'horizontal' ? 100 : 40)
   const [isPreviewMode, setIsPreviewMode] = useState(false)
 
   const [pages, setPages] = useState<string[]>([])
-  const [currentPage, setCurrentPage] = useState<number>(1)
+  const [currentPage, setCurrentPage] = useState<number>(() => getSavedPage(folderPath))
   const [tempZoom, setTempZoom] = useState<string>(imageWidth.toString())
-  const [tempPage, setTempPage] = useState<string>('1')
+  const [tempPage, setTempPage] = useState<string>(() => currentPage.toString())
 
   const [rating, setRating] = useState<number>(() => {
     const saved = localStorage.getItem(`rating:${folderPath}`)
@@ -52,7 +58,21 @@ export default function Reader({
 
   // LOAD
   useEffect(() => {
-    window.api.getImages(folderPath).then(setPages)
+    let isActive = true
+
+    window.api.getImages(folderPath).then((loadedPages) => {
+      if (!isActive) return
+
+      const savedPage = getSavedPage(folderPath)
+      const page = loadedPages.length > 0 ? Math.min(savedPage, loadedPages.length) : 1
+      setPages(loadedPages)
+      setCurrentPage(page)
+      setTempPage(page.toString())
+    })
+
+    return () => {
+      isActive = false
+    }
   }, [folderPath])
 
   // PERSISTENCE
@@ -67,19 +87,36 @@ export default function Reader({
       localStorage.setItem(`finished:${folderPath}`, 'true')
     }
   }, [currentPage, folderPath, pages.length])
-  useEffect(() => {
-    const key = `progress:${folderPath}`
-    const savedPage = localStorage.getItem(key)
-    if (savedPage) {
-      const pageNum = parseInt(savedPage)
-      if (!isNaN(pageNum) && pageNum > 1) {
-        setCurrentPage(pageNum)
-        setTempPage(savedPage)
+
+  // PAGE NAVIGATION
+  const commitPage = useCallback((val: number, fromScroll = false) => {
+    if (val < 1) val = 1
+    if (pages.length && val > pages.length) val = pages.length
+
+    if (val !== currentPage) {
+      setCurrentPage(val)
+      setTempPage(val.toString())
+
+      if (!fromScroll && viewMode === 'vertical') {
+        isAutoScrolling.current = true
+        setTimeout(() => {
+          const img = document.getElementById(`page-${val}`)
+          img?.scrollIntoView({ block: 'start' })
+          setTimeout(() => isAutoScrolling.current = false, 300)
+        }, 10)
       }
     }
-  }, [])
+  }, [currentPage, pages.length, viewMode])
 
-// KEYBOARD
+  const handleMoveLeft = useCallback(() => {
+    commitPage(readingDir === 'ltr' ? currentPage - 1 : currentPage + 1)
+  }, [commitPage, currentPage, readingDir])
+
+  const handleMoveRight = useCallback(() => {
+    commitPage(readingDir === 'ltr' ? currentPage + 1 : currentPage - 1)
+  }, [commitPage, currentPage, readingDir])
+
+  // KEYBOARD
   useEffect(() => {
     const keys = new Set<string>()
     const onDown = (e: KeyboardEvent) => {
@@ -112,7 +149,7 @@ export default function Reader({
       window.removeEventListener('keyup', onUp)
       cancelAnimationFrame(frameId) // Properly kills the active loop
     }
-  }, [viewMode, currentPage, readingDir, pages, scrollSpeed])
+  }, [handleMoveLeft, handleMoveRight, scrollSpeed])
 
   // Rating Handler
   const handleRating = (val: number) => {
@@ -120,29 +157,6 @@ export default function Reader({
     const newRating = val === rating ? 0 : val
     setRating(newRating)
     localStorage.setItem(`rating:${folderPath}`, newRating.toString())
-  }
-
-  // HELPERS
-  const handleMoveLeft = () => commitPage(readingDir === 'ltr' ? currentPage - 1 : currentPage + 1)
-  const handleMoveRight = () => commitPage(readingDir === 'ltr' ? currentPage + 1 : currentPage - 1)
-
-  const commitPage = (val: number, fromScroll = false) => {
-    if (val < 1) val = 1
-    if (pages.length && val > pages.length) val = pages.length
-    
-    if (val !== currentPage) {
-      setCurrentPage(val)
-      setTempPage(val.toString())
-
-      if (!fromScroll && viewMode === 'vertical') {
-        isAutoScrolling.current = true
-        setTimeout(() => {
-           const img = document.getElementById(`page-${val}`)
-           img?.scrollIntoView({ block: 'start' })
-           setTimeout(() => isAutoScrolling.current = false, 300)
-        }, 10)
-      }
-    }
   }
 
   const commitZoom = (val: number) => {

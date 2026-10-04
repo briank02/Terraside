@@ -34,6 +34,18 @@
 }
 .btn-primary:hover { opacity: 0.9; }
 
+.title-bar-window-button {
+  background: none;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+}
+
+.title-bar-close-button:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
 .input-dark {
   background: var(--bg-app);
   border: 1px solid var(--border);
@@ -245,16 +257,6 @@
 .light-theme .card-title, .light-theme .card-title .title-text {
   background: #ddd;
   color: #333;
-}
-
-.light-theme header, .light-theme .settings-popup {
-  background: var(--bg-panel) !important;
-  color: var(--text-main);
-}
-
-.settings-popup {
-  position: absolute; top: 70px; right: 20px; background: var(--bg-panel); 
-  padding: 15px; border-radius: 8px; border: 1px solid var(--border); z-index: 1000;
 }
 
 input::-webkit-outer-spin-button,

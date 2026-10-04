@@ -8,14 +8,12 @@ interface TerrasideApi {
   minimize: () => void
   toggleMaximize: () => void
   close: () => void
-  on: <Args extends unknown[]>(channel: string, func: (...args: Args) => void) => void
-  off: (channel: string) => void
+  onWindowStateChange: (func: (isMaximized: boolean) => void) => () => void
 }
 
 interface FolderScanResult {
   path: string
-  subfolders: Array<{ name: string; coverPath: null }>
-  hasImages: boolean
+  subfolders: Array<{ name: string }>
 }
 
 interface Window {

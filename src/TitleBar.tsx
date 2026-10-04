@@ -1,4 +1,8 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
+
+type ElectronCSSProperties = CSSProperties & {
+  WebkitAppRegion?: 'drag' | 'no-drag'
+}
 
 interface TitleBarProps {
   title: string
@@ -11,9 +15,8 @@ export default function TitleBar({ title, onSettingsClick, onHomeClick, showHome
   const [isMaximized, setIsMaximized] = useState(true)
 
   useEffect(() => {
-      const handleStateChange = (state: boolean) => setIsMaximized(state);
-      window.api.on('window:state-change', handleStateChange)
-      return () => window.api.off('window:state-change')
+    const handleStateChange = (state: boolean) => setIsMaximized(state)
+    return window.api.onWindowStateChange(handleStateChange)
   }, [])
 
   const handleMin = () => window.api.minimize()
@@ -21,20 +24,10 @@ export default function TitleBar({ title, onSettingsClick, onHomeClick, showHome
   const handleClose = () => window.api.close()
 
   return (
-    <div style={{
-      height: '40px',
-      background: '#222', 
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '0 10px',
-      borderBottom: '1px solid #333',
-      userSelect: 'none',
-      ...({ WebkitAppRegion: 'drag' } as any)
-    }}>
+    <div style={titleBarStyle}>
       
       {/* LEFT */}
-      <div style={{ display: 'flex', gap: '15px', ...({ WebkitAppRegion: 'no-drag' } as any) }}>
+      <div style={leftControlsStyle}>
         {showHome && (
           <button onClick={onHomeClick} style={btnStyle} title="Home">🏠</button>
         )}
@@ -49,25 +42,47 @@ export default function TitleBar({ title, onSettingsClick, onHomeClick, showHome
       </div>
 
       {/* RIGHT */}
-      <div style={{ display: 'flex', ...({ WebkitAppRegion: 'no-drag' } as any) }}>
-        <button onClick={handleMin} style={winBtnStyle}>─</button>
+      <div style={rightControlsStyle}>
+        <button className="title-bar-window-button" onClick={handleMin} style={winBtnStyle}>─</button>
         {/* Swap Icon based on state */}
-        <button onClick={handleMax} style={{ ...winBtnStyle, fontSize: isMaximized ? '16px' : '14px' }}>
+        <button className="title-bar-window-button" onClick={handleMax} style={{ ...winBtnStyle, fontSize: isMaximized ? '16px' : '14px' }}>
             {isMaximized ? '❐' : '☐'}
         </button>
-        <button onClick={handleClose} style={{...winBtnStyle, ':hover': { background: 'red' } } as any}>✕</button>
+        <button className="title-bar-window-button title-bar-close-button" onClick={handleClose} style={winBtnStyle}>✕</button>
       </div>
     </div>
   )
 }
 
-const btnStyle: React.CSSProperties = {
+const titleBarStyle: ElectronCSSProperties = {
+  height: '40px',
+  background: '#222',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: '0 10px',
+  borderBottom: '1px solid #333',
+  userSelect: 'none',
+  WebkitAppRegion: 'drag'
+}
+
+const leftControlsStyle: ElectronCSSProperties = {
+  display: 'flex',
+  gap: '15px',
+  WebkitAppRegion: 'no-drag'
+}
+
+const rightControlsStyle: ElectronCSSProperties = {
+  display: 'flex',
+  WebkitAppRegion: 'no-drag'
+}
+
+const btnStyle: CSSProperties = {
   background: 'none', border: 'none', color: '#ccc', 
   fontSize: '18px', cursor: 'pointer', padding: '5px'
 }
 
-const winBtnStyle: React.CSSProperties = {
-  background: 'none', border: 'none', color: '#ccc', 
+const winBtnStyle: CSSProperties = {
   width: '40px', height: '40px', fontSize: '14px',
-  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+  display: 'flex', alignItems: 'center', justifyContent: 'center'
 }
