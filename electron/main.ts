@@ -169,6 +169,7 @@ app.whenReady().then(() => {
   })
 
   ipcMain.on('window:minimize', () => win?.minimize())
+  ipcMain.handle('window:isMaximized', () => win?.isMaximized() ?? false)
   ipcMain.on('window:maximize', () => {
     if (!win) return
     if (win.isMaximized()) {

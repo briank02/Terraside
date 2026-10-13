@@ -6,6 +6,7 @@ interface TerrasideApi {
   getImages: (path: string) => Promise<string[]>
   getCover: (path: string) => Promise<string | null>
   minimize: () => void
+  isMaximized: () => Promise<boolean>
   toggleMaximize: () => void
   close: () => void
   onWindowStateChange: (func: (isMaximized: boolean) => void) => () => void

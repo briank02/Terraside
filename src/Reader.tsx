@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef, type WheelEvent } from 'react'
 import { VirtuosoGrid } from 'react-virtuoso'
-import TitleBar from './TitleBar'
 import { parseSavedPage } from './reader-utils'
 
 type ReadingDir = 'rtl' | 'ltr'
@@ -11,8 +10,6 @@ const SCROLL_VIEW_ZOOM = 40
 
 interface ReaderProps {
   folderPath: string
-  onClose: () => void
-  onSettingsClick: () => void
   readingDir: ReadingDir
   scrollSpeed: number
   previousChapterPath: string | null
@@ -24,10 +21,43 @@ const getSavedPage = (folderPath: string) => {
   return parseSavedPage(localStorage.getItem(`progress:${folderPath}`))
 }
 
+const readerIconProps = {
+  width: 16,
+  height: 16,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.8,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+  'aria-hidden': true
+}
+
+const ChevronLeftIcon = () => (
+  <svg {...readerIconProps}><path d="m15 18-6-6 6-6" /></svg>
+)
+
+const ChevronRightIcon = () => (
+  <svg {...readerIconProps}><path d="m9 18 6-6-6-6" /></svg>
+)
+
+const ThumbnailsIcon = () => (
+  <svg {...readerIconProps}>
+    <rect x="3" y="3" width="7" height="7" rx="1" />
+    <rect x="14" y="3" width="7" height="7" rx="1" />
+    <rect x="3" y="14" width="7" height="7" rx="1" />
+    <rect x="14" y="14" width="7" height="7" rx="1" />
+  </svg>
+)
+
+const StarIcon = ({ filled = false }: { filled?: boolean }) => (
+  <svg {...readerIconProps} fill={filled ? 'currentColor' : 'none'}>
+    <path d="m12 3 2.75 5.57 6.15.9-4.45 4.33 1.05 6.12L12 17.03l-5.5 2.89 1.05-6.12L3.1 9.47l6.15-.9L12 3Z" />
+  </svg>
+)
+
 export default function Reader({
   folderPath,
-  onClose,
-  onSettingsClick,
   readingDir,
   scrollSpeed,
   previousChapterPath,
@@ -45,6 +75,7 @@ export default function Reader({
     viewMode === 'pageFlip' ? PAGE_FLIP_ZOOM : SCROLL_VIEW_ZOOM
   )
   const [isPreviewMode, setIsPreviewMode] = useState(false)
+  const [isRatingOpen, setIsRatingOpen] = useState(false)
 
   const [pages, setPages] = useState<string[]>([])
   const [currentPage, setCurrentPage] = useState<number>(() => getSavedPage(folderPath))
@@ -57,12 +88,33 @@ export default function Reader({
   })
   
   const containerRef = useRef<HTMLDivElement>(null)
+  const ratingPopoverRef = useRef<HTMLDivElement>(null)
   const isAutoScrolling = useRef<boolean>(false)
   const [scrollParent, setScrollParent] = useState<HTMLElement | null>(null)
 
   useEffect(() => {
     if (containerRef.current) setScrollParent(containerRef.current)
   }, [isPreviewMode])
+
+  useEffect(() => {
+    if (!isRatingOpen) return
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!ratingPopoverRef.current?.contains(event.target as Node)) {
+        setIsRatingOpen(false)
+      }
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsRatingOpen(false)
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isRatingOpen])
 
   // LOAD
   useEffect(() => {
@@ -174,10 +226,10 @@ export default function Reader({
     setTempZoom(val.toString())
   }
 
-  const toggleViewMode = () => {
-    const newMode = viewMode === 'scroll' ? 'pageFlip' : 'scroll'
-    setViewMode(newMode)
-    commitZoom(newMode === 'pageFlip' ? PAGE_FLIP_ZOOM : SCROLL_VIEW_ZOOM)
+  const selectViewMode = (nextMode: ViewMode) => {
+    if (nextMode === viewMode) return
+    setViewMode(nextMode)
+    commitZoom(nextMode === 'pageFlip' ? PAGE_FLIP_ZOOM : SCROLL_VIEW_ZOOM)
   }
 
   const handleWheel = (e: WheelEvent<HTMLDivElement>) => {
@@ -211,13 +263,7 @@ export default function Reader({
   }
 
 return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg-app)', color: 'var(--text-main)' }}>
-      <TitleBar 
-        title={folderPath.split('\\').pop() || 'Reader'} 
-        onHomeClick={onClose} 
-        onSettingsClick={onSettingsClick}
-      />
-
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'var(--bg-app)', color: 'var(--text-main)' }}>
       {/* VIEWER AREA */}
       <div 
         ref={containerRef} 
@@ -289,101 +335,142 @@ return (
         })}
       </div>
 
-{/* BOTTOM CONTROLS */}
-      <div style={{ 
-        height: '58px',
-        background: 'var(--bg-panel)',
-        borderTop: '1px solid var(--border)', 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        gap: '12px',
-        padding: '0 12px'
-      }}>
-        <button
-          onClick={() => previousChapterPath && onOpenChapter(previousChapterPath)}
-          disabled={!previousChapterPath}
-          className="btn-icon reader-bar-button"
-          style={{ opacity: previousChapterPath ? 1 : 0.35 }}
-        >
-          &lt; Previous Chapter
-        </button>
-
-        <button onClick={() => setIsPreviewMode(!isPreviewMode)} className="btn-icon reader-bar-button">
-          {isPreviewMode ? 'Close Preview' : 'Preview Mode'}
-        </button>
-        
-        {/* View Toggle */}
-        <button
-          onClick={toggleViewMode}
-          className="btn-icon reader-bar-button"
-          title={`Switch to ${viewMode === 'pageFlip' ? 'Scroll View' : 'Page Flip'}`}
-        >
-          {viewMode === 'pageFlip' ? 'Page Flip' : 'Scroll View'}
-        </button>
-
-        {/* Zoom Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-app)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-          <button onClick={() => commitZoom(imageWidth - 10)} className="btn-icon" style={{ width: '24px', height: '24px' }}>−</button>
-          <input 
-            type="number" 
-            value={tempZoom} 
-            onChange={(e) => setTempZoom(e.target.value)} 
-            onBlur={() => commitZoom(Number(tempZoom))}
-            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-            className="input-dark"
-            style={{ width: '40px', textAlign: 'center', padding: '2px', border: 'none', background: 'transparent' }} 
-          />
-          <button onClick={() => commitZoom(imageWidth + 10)} className="btn-icon" style={{ width: '24px', height: '24px' }}>+</button>
-          <span style={{ fontSize: '12px', color: '#666', paddingRight: '5px' }}>%</span>
+      {/* BOTTOM CONTROLS */}
+      <div className="reader-controls">
+        <div className="reader-controls-zone reader-controls-left">
+          <button
+            onClick={() => previousChapterPath && onOpenChapter(previousChapterPath)}
+            disabled={!previousChapterPath}
+            className="btn-icon reader-control-button reader-chapter-button"
+            title="Previous chapter"
+            aria-label="Previous chapter"
+          >
+            <ChevronLeftIcon />
+            <span className="reader-control-label">Chapter</span>
+          </button>
         </div>
 
-        {/* Page Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-app)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-          <button onClick={handleMoveLeft} className="btn-icon" style={{ width: '24px', height: '24px' }}>❮</button>
-          <input 
-            type="number" 
-            value={tempPage} 
-            onChange={(e) => setTempPage(e.target.value)} 
-            onBlur={() => commitPage(Number(tempPage))}
-            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-            className="input-dark"
-            style={{ width: '40px', textAlign: 'center', padding: '2px', border: 'none', background: 'transparent' }} 
-          />
-          <span style={{ fontSize: '12px', color: '#666' }}>/ {pages.length}</span>
-          <button onClick={handleMoveRight} className="btn-icon" style={{ width: '24px', height: '24px' }}>❯</button>
-        </div>
-        
-        {/* NEW: Rating Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--bg-app)', padding: '4px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-          {[1, 2, 3, 4, 5].map(star => (
+        <div className="reader-controls-center">
+          <button
+            onClick={() => setIsPreviewMode(!isPreviewMode)}
+            className={`btn-icon reader-control-button${isPreviewMode ? ' active' : ''}`}
+            title={isPreviewMode ? 'Close thumbnails' : 'Show thumbnails'}
+            aria-label={isPreviewMode ? 'Close thumbnails' : 'Show thumbnails'}
+            aria-pressed={isPreviewMode}
+          >
+            <ThumbnailsIcon />
+          </button>
+
+          <div className="reader-view-selector" role="group" aria-label="Reader view">
             <button
-              key={star}
-              onClick={() => handleRating(star)}
-              className="btn-icon"
-              style={{
-                width: 'auto',
-                height: 'auto',
-                padding: '0 2px',
-                color: rating >= star ? '#FFD700' : '#444',
-                fontSize: '18px',
-                transition: 'color 0.2s',
-              }}
+              onClick={() => selectViewMode('pageFlip')}
+              className={viewMode === 'pageFlip' ? 'active' : ''}
+              aria-pressed={viewMode === 'pageFlip'}
             >
-              ★
+              Page
             </button>
-          ))}
+            <button
+              onClick={() => selectViewMode('scroll')}
+              className={viewMode === 'scroll' ? 'active' : ''}
+              aria-pressed={viewMode === 'scroll'}
+            >
+              Scroll
+            </button>
+          </div>
+
+          <div className="reader-page-control" aria-label="Page navigation">
+            <button onClick={handleMoveLeft} className="btn-icon" title="Previous page" aria-label="Previous page">
+              <ChevronLeftIcon />
+            </button>
+            <input
+              type="number"
+              value={tempPage}
+              onChange={(e) => setTempPage(e.target.value)}
+              onBlur={() => commitPage(Number(tempPage))}
+              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+              className="input-dark"
+              aria-label="Page number"
+            />
+            <span>/ {pages.length}</span>
+            <button onClick={handleMoveRight} className="btn-icon" title="Next page" aria-label="Next page">
+              <ChevronRightIcon />
+            </button>
+          </div>
+
+          <div className="reader-zoom-control" aria-label="Zoom controls">
+            <button
+              onClick={() => commitZoom(imageWidth - 10)}
+              className="btn-icon reader-zoom-step"
+              title="Zoom out"
+              aria-label="Zoom out"
+            >
+              −
+            </button>
+            <input
+              type="number"
+              value={tempZoom}
+              onChange={(e) => setTempZoom(e.target.value)}
+              onBlur={() => commitZoom(Number(tempZoom))}
+              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+              className="input-dark"
+              aria-label="Zoom percentage"
+            />
+            <span>%</span>
+            <button
+              onClick={() => commitZoom(imageWidth + 10)}
+              className="btn-icon reader-zoom-step"
+              title="Zoom in"
+              aria-label="Zoom in"
+            >
+              +
+            </button>
+          </div>
+
+          <div className="reader-rating-control" ref={ratingPopoverRef}>
+            <button
+              onClick={() => setIsRatingOpen(!isRatingOpen)}
+              className={`btn-icon reader-control-button${rating > 0 ? ' active' : ''}`}
+              title={rating > 0 ? `Rating: ${rating} out of 5` : 'Rate this chapter'}
+              aria-label={rating > 0 ? `Rating: ${rating} out of 5` : 'Rate this chapter'}
+              aria-expanded={isRatingOpen}
+            >
+              <StarIcon filled={rating > 0} />
+              {rating > 0 && <span>{rating}</span>}
+            </button>
+
+            {isRatingOpen && (
+              <div className="reader-rating-popover" role="dialog" aria-label="Choose rating">
+                {[1, 2, 3, 4, 5].map(star => (
+                  <button
+                    key={star}
+                    onClick={() => {
+                      handleRating(star)
+                      setIsRatingOpen(false)
+                    }}
+                    className={`btn-icon${rating >= star ? ' active' : ''}`}
+                    title={`${star} star${star === 1 ? '' : 's'}`}
+                    aria-label={`${star} star${star === 1 ? '' : 's'}`}
+                  >
+                    <StarIcon filled={rating >= star} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        <button
-          onClick={() => nextChapterPath && onOpenChapter(nextChapterPath)}
-          disabled={!nextChapterPath}
-          className="btn-icon reader-bar-button"
-          style={{ opacity: nextChapterPath ? 1 : 0.35 }}
-        >
-          Next Chapter &gt;
-        </button>
-
+        <div className="reader-controls-zone reader-controls-right">
+          <button
+            onClick={() => nextChapterPath && onOpenChapter(nextChapterPath)}
+            disabled={!nextChapterPath}
+            className="btn-icon reader-control-button reader-chapter-button"
+            title="Next chapter"
+            aria-label="Next chapter"
+          >
+            <span className="reader-control-label">Chapter</span>
+            <ChevronRightIcon />
+          </button>
+        </div>
       </div>
     </div>
   )

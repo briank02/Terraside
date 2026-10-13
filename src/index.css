@@ -36,6 +36,55 @@ button, input, select {
   outline: none;
 }
 
+input[type='range'] {
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--border);
+  border-radius: 999px;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  background: var(--accent);
+  border: none;
+  border-radius: 50%;
+}
+
+input[type='range']:hover::-webkit-slider-thumb {
+  filter: brightness(1.12);
+}
+
+input[type='range']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+input[type='range']::-moz-range-track {
+  height: 4px;
+  background: var(--border);
+  border: none;
+  border-radius: 999px;
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border: none;
+  border-radius: 50%;
+}
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: var(--bg-app); }
 ::-webkit-scrollbar-thumb { background: #333; border-radius: 5px; border: 2px solid var(--bg-app); }

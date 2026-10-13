@@ -13,6 +13,59 @@ interface FolderData { name: string }
 type SortMode = 'alpha' | 'random' | 'rating' | 'unread'
 type ReadingDir = 'rtl' | 'ltr'
 
+const libraryIconProps = {
+  width: 16,
+  height: 16,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.8,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+  'aria-hidden': true
+}
+
+const SearchIcon = () => (
+  <svg {...libraryIconProps}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-4-4" />
+  </svg>
+)
+
+const CloseIcon = () => (
+  <svg {...libraryIconProps}>
+    <path d="m6 6 12 12" />
+    <path d="M18 6 6 18" />
+  </svg>
+)
+
+const FolderOpenIcon = () => (
+  <svg {...libraryIconProps}>
+    <path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z" />
+    <path d="m3 18 3-7h15" />
+  </svg>
+)
+
+const ListIcon = () => (
+  <svg {...libraryIconProps}>
+    <path d="M8 6h13M8 12h13M8 18h13" />
+    <path d="M3 6h.01M3 12h.01M3 18h.01" />
+  </svg>
+)
+
+const GridIcon = () => (
+  <svg {...libraryIconProps}>
+    <rect x="3" y="3" width="7" height="7" rx="1" />
+    <rect x="14" y="3" width="7" height="7" rx="1" />
+    <rect x="3" y="14" width="7" height="7" rx="1" />
+    <rect x="14" y="14" width="7" height="7" rx="1" />
+  </svg>
+)
+
+const ChevronLeftIcon = () => (
+  <svg {...libraryIconProps}><path d="m15 18-6-6 6-6" /></svg>
+)
+
 const coverCache = new Map<string, string | 'empty'>()
 const pendingCoverRequests = new Map<string, Promise<string | 'empty'>>()
 const coverRequestQueue: Array<{
@@ -182,9 +235,7 @@ function App(): JSX.Element {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const libraryScrollRef = useRef<HTMLDivElement>(null)
   const [scrollParent, setScrollParent] = useState<HTMLElement | null>(null)
-  const [isLibraryScrolled, setIsLibraryScrolled] = useState(false)
   const [isLibraryScrolling, setIsLibraryScrolling] = useState(false)
-  const isLibraryScrolledRef = useRef(false)
   const didRestoreLibraryRef = useRef(false)
 
   // PERSISTENCE & THEME
@@ -217,15 +268,6 @@ function App(): JSX.Element {
   }, [isLightMode])
   useEffect(() => { localStorage.setItem('readingDir', readingDir) }, [readingDir])
   useEffect(() => { localStorage.setItem('scrollSpeed', scrollSpeed.toString()) }, [scrollSpeed])
-
-  const handleLibraryScroll = () => {
-    const scrollTop = libraryScrollRef.current?.scrollTop ?? 0
-    const nextIsScrolled = scrollTop > 0
-    if (nextIsScrolled !== isLibraryScrolledRef.current) {
-      isLibraryScrolledRef.current = nextIsScrolled
-      setIsLibraryScrolled(nextIsScrolled)
-    }
-  }
 
   // LOGIC
   const loadPath = async (path: string) => {
@@ -413,14 +455,23 @@ function App(): JSX.Element {
     </div>
   )
 
+  const titleBarTitle = readingFolder
+    ? readingFolder.split(/[\\/]/).pop() || 'Reader'
+    : 'Terraside'
+
   return (
-    <>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <TitleBar
+        title={titleBarTitle}
+        showHome={Boolean(readingFolder)}
+        onHomeClick={readingFolder ? closeReader : undefined}
+        onSettingsClick={() => setIsSettingsOpen(true)}
+      />
+
       {readingFolder && (
         <Reader
           key={readingFolder}
           folderPath={readingFolder}
-          onClose={closeReader}
-          onSettingsClick={() => setIsSettingsOpen(true)}
           readingDir={readingDir}
           scrollSpeed={scrollSpeed}
           previousChapterPath={previousChapterPath}
@@ -431,24 +482,15 @@ function App(): JSX.Element {
 
       {settingsModal}
 
-      <div style={{ display: readingFolder ? 'none' : 'flex', flexDirection: 'column', height: '100vh' }}>
-        
-        {/* TITLE BAR */}
-        <TitleBar 
-          title="Terraside" 
-          showHome={false} 
-          onSettingsClick={() => setIsSettingsOpen(true)}
-        />
-
+      <div style={{ display: readingFolder ? 'none' : 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {/* MAIN CONTENT */}
       <div
         ref={libraryScrollRef}
-        onScroll={handleLibraryScroll}
         className={`library-scroll${isLibraryScrolling ? ' library-scrolling' : ''}`}
         style={{ padding: '0 20px 20px', overflowY: 'auto', flex: 1, ...libraryLayoutStyle }}
       >
         {/* CONTROLS */}
-        <div className={`toolbar ${isLibraryScrolled ? 'toolbar-scrolled' : ''}`} style={{ borderRadius: '0 0 8px 8px', marginBottom: '20px' }}>
+        <div className="toolbar">
           
           {/* SEARCH */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
@@ -460,30 +502,36 @@ function App(): JSX.Element {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && setActiveSearch(searchTerm)}
                 className="input-dark"
-                style={{ width: '100%', paddingLeft: '30px' }} 
+                style={{ width: '100%', paddingLeft: '34px', paddingRight: activeSearch ? '34px' : '10px' }}
               />
-              <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
+              <span className="library-search-icon"><SearchIcon /></span>
               {activeSearch && (
-                 <button onClick={() => { setSearchTerm(''); setActiveSearch('') }} 
-                 style={{ position: 'absolute', right: '5px', top: '5px', background: 'none', border: 'none', color: '#999', cursor: 'pointer' }}>✕</button>
+                <button
+                  onClick={() => { setSearchTerm(''); setActiveSearch('') }}
+                  className="btn-icon library-search-clear"
+                  title="Clear search"
+                  aria-label="Clear search"
+                >
+                  <CloseIcon />
+                </button>
               )}
             </div>
           </div>
 
           {/* TOOLS */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: '20px' }}>
-            <span style={{ fontSize: '12px', color: '#888' }}>Size</span>
+            <span className="library-toolbar-label">Size</span>
             <input 
               type="range" 
               min="2" 
               max="8" 
               step="1"
-              value={gridColumns} 
+              value={10 - gridColumns}
               onChange={(e) => {                  
-                const val = parseInt(e.target.value)
-                setGridColumns(val)
-                localStorage.setItem('gridColumns', val.toString())
+                const sliderValue = parseInt(e.target.value)
+                setGridColumns(10 - sliderValue)
               }}
+              aria-label="Grid item size"
               style={{ cursor: 'pointer', width: '100px' }}
             />
           </div>
@@ -501,16 +549,22 @@ function App(): JSX.Element {
               <option value="random">Random</option>
             </select>
 
-            <div style={{ width: '1px', height: '20px', background: '#333' }}></div> {/* Divider */}
+            <div className="library-toolbar-divider"></div>
 
-            <button onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')} className="btn-icon" title="Toggle View">
-              {viewMode === 'grid' ? '☰' : '⊞'}
+            <button
+              onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+              className="btn-icon library-view-button"
+              title={viewMode === 'grid' ? 'Switch to list view' : 'Switch to grid view'}
+              aria-label={viewMode === 'grid' ? 'Switch to list view' : 'Switch to grid view'}
+            >
+              {viewMode === 'grid' ? <ListIcon /> : <GridIcon />}
             </button>
             
-            <div style={{ width: '1px', height: '20px', background: '#333' }}></div> {/* Divider */}
+            <div className="library-toolbar-divider"></div>
 
-            <button onClick={handleSelectFolder} className="btn-primary">
-              📂 Open Folder
+            <button onClick={handleSelectFolder} className="btn-primary library-text-button">
+              <FolderOpenIcon />
+              <span>Open Folder</span>
             </button>
           </div>
         </div>
@@ -518,8 +572,9 @@ function App(): JSX.Element {
         {currentPath && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '20px' }}>
             {pathHistory.length > 0 && (
-              <button onClick={handleBack} className="btn-primary" style={{ padding: '6px 12px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>◀</span> Back
+              <button onClick={handleBack} className="btn-primary library-text-button" style={{ padding: '6px 12px', fontSize: '13px' }}>
+                <ChevronLeftIcon />
+                <span>Back</span>
               </button>
             )}
             <p style={{ opacity: 0.6, fontSize: '12px', margin: 0 }}>{currentPath}</p>
@@ -542,7 +597,7 @@ function App(): JSX.Element {
         )}
       </div>
     </div>
-    </>
+    </div>
   )
 }
 

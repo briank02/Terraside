@@ -7,6 +7,7 @@ const api = {
   getCover: (path: string) => ipcRenderer.invoke('folder:getCover', path),
 
   minimize: () => ipcRenderer.send('window:minimize'),
+  isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized'),
   toggleMaximize: () => ipcRenderer.send('window:maximize'),
   close: () => ipcRenderer.send('window:close'),
 
