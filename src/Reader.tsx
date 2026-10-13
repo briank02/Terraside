@@ -4,7 +4,10 @@ import TitleBar from './TitleBar'
 import { parseSavedPage } from './reader-utils'
 
 type ReadingDir = 'rtl' | 'ltr'
-type ViewMode = 'vertical' | 'horizontal'
+type ViewMode = 'scroll' | 'pageFlip'
+
+const PAGE_FLIP_ZOOM = 100
+const SCROLL_VIEW_ZOOM = 40
 
 interface ReaderProps {
   folderPath: string
@@ -31,11 +34,16 @@ export default function Reader({
   nextChapterPath,
   onOpenChapter
 }: ReaderProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>(() => (
-    localStorage.getItem('viewMode') === 'vertical' ? 'vertical' : 'horizontal'
-  ))
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const savedMode = localStorage.getItem('viewMode')
+
+    // Keep existing preferences working after renaming the reader modes.
+    return savedMode === 'scroll' || savedMode === 'vertical' ? 'scroll' : 'pageFlip'
+  })
   
-  const [imageWidth, setImageWidth] = useState<number>(viewMode === 'horizontal' ? 100 : 40)
+  const [imageWidth, setImageWidth] = useState<number>(
+    viewMode === 'pageFlip' ? PAGE_FLIP_ZOOM : SCROLL_VIEW_ZOOM
+  )
   const [isPreviewMode, setIsPreviewMode] = useState(false)
 
   const [pages, setPages] = useState<string[]>([])
@@ -97,7 +105,7 @@ export default function Reader({
       setCurrentPage(val)
       setTempPage(val.toString())
 
-      if (!fromScroll && viewMode === 'vertical') {
+      if (!fromScroll && viewMode === 'scroll') {
         isAutoScrolling.current = true
         setTimeout(() => {
           const img = document.getElementById(`page-${val}`)
@@ -167,10 +175,9 @@ export default function Reader({
   }
 
   const toggleViewMode = () => {
-    const newMode = viewMode === 'vertical' ? 'horizontal' : 'vertical'
+    const newMode = viewMode === 'scroll' ? 'pageFlip' : 'scroll'
     setViewMode(newMode)
-    if (newMode === 'horizontal') commitZoom(100)
-    else commitZoom(40)
+    commitZoom(newMode === 'pageFlip' ? PAGE_FLIP_ZOOM : SCROLL_VIEW_ZOOM)
   }
 
   const handleWheel = (e: WheelEvent<HTMLDivElement>) => {
@@ -184,7 +191,7 @@ export default function Reader({
   }
 
   const handleScroll = () => {
-    if (viewMode !== 'vertical' || isAutoScrolling.current || !containerRef.current) return
+    if (viewMode !== 'scroll' || isAutoScrolling.current || !containerRef.current) return
     const containerTop = containerRef.current.scrollTop
     const containerHeight = containerRef.current.clientHeight
     const center = containerTop + (containerHeight / 3)
@@ -218,11 +225,12 @@ return (
         onWheel={handleWheel}
         style={{ 
           flex: 1, 
+          minHeight: 0,
           overflow: 'auto', 
           display: 'flex', 
           flexDirection: 'column', 
           alignItems: isPreviewMode ? 'stretch' : 'center',
-          justifyContent: viewMode === 'horizontal' && !isPreviewMode ? 'center' : 'flex-start'
+          justifyContent: 'flex-start'
       }}>
         {isPreviewMode ? (
           scrollParent && (
@@ -256,7 +264,9 @@ return (
             />
           )
         ) : pages.map((src, i) => {
-          if (viewMode === 'horizontal' && i + 1 !== currentPage) return null
+          if (viewMode === 'pageFlip' && i + 1 !== currentPage) return null
+
+          const isPageFlip = viewMode === 'pageFlip'
           
           return (
             <img 
@@ -264,12 +274,15 @@ return (
               src={`media:///${encodeURI(src.replace(/\\/g, '/'))}`}
               style={{
                 display: 'block',
-                width: viewMode === 'horizontal' ? (imageWidth === 100 ? 'auto' : `${imageWidth}%`) : `${imageWidth}%`,
-                maxWidth: viewMode === 'horizontal' && imageWidth === 100 ? '100%' : 'none',
-                maxHeight: viewMode === 'horizontal' && imageWidth === 100 ? '100%' : 'none',
+                width: isPageFlip ? 'auto' : `${imageWidth}%`,
+                height: isPageFlip ? `${imageWidth}%` : 'auto',
+                maxWidth: isPageFlip ? `${imageWidth}%` : 'none',
+                maxHeight: 'none',
+                flexShrink: 0,
                 objectFit: 'contain',
-                marginBottom: viewMode === 'vertical' ? '0' : 'auto',
-                marginTop: viewMode === 'horizontal' ? 'auto' : '0'
+                objectPosition: 'center top',
+                alignSelf: 'safe center',
+                margin: 0
               }}
             />
           )
@@ -301,8 +314,12 @@ return (
         </button>
         
         {/* View Toggle */}
-        <button onClick={toggleViewMode} className="btn-icon reader-bar-button">
-          {viewMode === 'vertical' ? 'Height Fit' : 'Page Flip'}
+        <button
+          onClick={toggleViewMode}
+          className="btn-icon reader-bar-button"
+          title={`Switch to ${viewMode === 'pageFlip' ? 'Scroll View' : 'Page Flip'}`}
+        >
+          {viewMode === 'pageFlip' ? 'Page Flip' : 'Scroll View'}
         </button>
 
         {/* Zoom Controls */}

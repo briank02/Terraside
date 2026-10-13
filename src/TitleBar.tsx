@@ -37,7 +37,7 @@ export default function TitleBar({ title, onSettingsClick, onHomeClick, showHome
       </div>
 
       {/* CENTER */}
-      <div style={{ fontWeight: 500, color: '#eee', fontSize: '14px' }}>
+      <div style={titleStyle} title={title}>
         {title}
       </div>
 
@@ -57,9 +57,9 @@ export default function TitleBar({ title, onSettingsClick, onHomeClick, showHome
 const titleBarStyle: ElectronCSSProperties = {
   height: '40px',
   background: '#222',
-  display: 'flex',
+  display: 'grid',
+  gridTemplateColumns: '120px minmax(0, 1fr) 120px',
   alignItems: 'center',
-  justifyContent: 'space-between',
   padding: '0 10px',
   borderBottom: '1px solid #333',
   userSelect: 'none',
@@ -74,7 +74,19 @@ const leftControlsStyle: ElectronCSSProperties = {
 
 const rightControlsStyle: ElectronCSSProperties = {
   display: 'flex',
+  justifyContent: 'flex-end',
   WebkitAppRegion: 'no-drag'
+}
+
+const titleStyle: CSSProperties = {
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  textAlign: 'center',
+  fontWeight: 500,
+  color: '#eee',
+  fontSize: '14px'
 }
 
 const btnStyle: CSSProperties = {
